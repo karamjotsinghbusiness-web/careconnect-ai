@@ -3,6 +3,8 @@ from pathlib import Path
 import math
 import json
 import random
+from difflib import get_close_matches
+
 import pandas as pd
 import numpy as np
 
@@ -11,12 +13,13 @@ sys.path.append(str(BASE_DIR))
 
 from flask import Flask, request, Response
 from flask_cors import CORS
-from models.recommendation_engine import recommend
+from models.recommendation_engine import recommend, encoders
 
 app = Flask(__name__)
 CORS(app)
 
 search_history = []
+
 
 def clean_data(obj):
     if obj is None:
@@ -44,6 +47,7 @@ def clean_data(obj):
 
     return obj
 
+
 def json_response(data, status=200):
     cleaned = clean_data(data)
 
@@ -52,6 +56,7 @@ def json_response(data, status=200):
         status=status,
         mimetype="application/json"
     )
+
 
 def detect_emergency(condition):
     condition = str(condition).lower()
@@ -80,6 +85,7 @@ def detect_emergency(condition):
         "message": "No emergency warning detected from the entered condition."
     }
 
+
 def confidence_score(providers, advocates):
     score = 70
 
@@ -93,11 +99,56 @@ def confidence_score(providers, advocates):
 
     return min(score, 98)
 
+
 @app.route("/", methods=["GET"])
 def home():
     return json_response({
         "message": "CareConnect AI backend is running"
     })
+
+
+@app.route("/symptom_suggestions", methods=["POST", "OPTIONS"])
+def symptom_suggestions():
+    if request.method == "OPTIONS":
+        return json_response({"status": "ok"})
+
+    try:
+        data = request.get_json()
+        typed_condition = str(data.get("condition", "")).strip()
+
+        allowed_conditions = list(encoders["condition"].classes_)
+
+        direct_matches = [
+            condition for condition in allowed_conditions
+            if typed_condition.lower() in str(condition).lower()
+        ]
+
+        close_matches = get_close_matches(
+            typed_condition,
+            allowed_conditions,
+            n=5,
+            cutoff=0.2
+        )
+
+        suggestions = []
+
+        for item in direct_matches + close_matches:
+            if item not in suggestions:
+                suggestions.append(item)
+
+        suggestions = suggestions[:5]
+
+        return json_response({
+            "typed": typed_condition,
+            "suggestions": suggestions
+        })
+
+    except Exception as error:
+        return json_response({
+            "error": str(error),
+            "suggestions": []
+        }, status=500)
+
 
 @app.route("/recommend", methods=["POST", "OPTIONS"])
 def get_recommendation():
@@ -144,6 +195,7 @@ def get_recommendation():
             "error": str(error)
         }, status=500)
 
+
 @app.route("/analytics", methods=["GET"])
 def analytics():
     total_searches = len(search_history)
@@ -159,6 +211,7 @@ def analytics():
         "specialty_counts": specialty_counts,
         "recent_searches": search_history[-5:]
     })
+
 
 if __name__ == "__main__":
     app.run(
