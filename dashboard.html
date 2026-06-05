@@ -125,6 +125,43 @@ button:hover{
     background:#115e59;
 }
 
+.symptom-wrapper{
+    position:relative;
+}
+
+#suggestionBox{
+    margin-top:-8px;
+    margin-bottom:15px;
+}
+
+.suggestion-title{
+    font-size:13px;
+    color:#4b5563;
+    margin-bottom:8px;
+}
+
+.suggestion-btn{
+    width:100%;
+    background:white;
+    color:#1f2937;
+    border:1px solid #ccfbf1;
+    padding:12px;
+    border-radius:10px;
+    margin-bottom:8px;
+    text-align:left;
+    cursor:pointer;
+    box-shadow:0 4px 12px rgba(15,118,110,0.08);
+}
+
+.suggestion-btn:hover{
+    background:#ecfeff;
+    border-color:#0f766e;
+}
+
+.suggestion-btn b{
+    color:#0f766e;
+}
+
 .result-box{
     display:none;
     background:#ecfdf5;
@@ -304,7 +341,10 @@ button:hover{
                             <option>UnitedHealthcare</option>
                         </select>
 
-                        <input type="text" id="condition" placeholder="Condition or symptom" required>
+                        <div class="symptom-wrapper">
+                            <input type="text" id="condition" placeholder="Condition or symptom" required>
+                            <div id="suggestionBox"></div>
+                        </div>
 
                         <button type="submit">Run AI Recommendation</button>
                     </form>
@@ -318,11 +358,11 @@ button:hover{
                 <div class="panel">
                     <h2>How CareConnect AI Helps</h2>
 
-                    <div class="benefit"> Finds providers faster</div>
-                    <div class="benefit"> Connects patients with advocates</div>
-                    <div class="benefit"> Uses AI specialty prediction</div>
-                    <div class="benefit"> Supports local healthcare matching</div>
-                    <div class="benefit"> Helps reduce insurance confusion</div>
+                    <div class="benefit">Finds providers faster</div>
+                    <div class="benefit">Connects patients with advocates</div>
+                    <div class="benefit">Uses AI specialty prediction</div>
+                    <div class="benefit">Supports local healthcare matching</div>
+                    <div class="benefit">Helps reduce insurance confusion</div>
                 </div>
             </section>
 
@@ -355,7 +395,7 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/12.14.0/fireba
 import { getFirestore, collection, addDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/12.14.0/firebase-firestore.js";
 
 const firebaseConfig = {
-    apiKey: "AIzaSyB_O-wKgjdE0pFAvbKUabJBJnnvwBuw3ho",
+     apiKey: "AIzaSyB_O-wKgjdE0pFAvbKUabJBJnnvwBuw3ho",
     authDomain: "careconnectai-19ace.firebaseapp.com",
     databaseURL: "https://careconnectai-19ace-default-rtdb.firebaseio.com",
     projectId: "careconnectai-19ace",
@@ -365,6 +405,8 @@ const firebaseConfig = {
     measurementId: "G-7YE0JPDKK9"
 };
 
+const BACKEND_URL = "https://careconnect-ai-production-c747.up.railway.app";
+
 const firebaseApp = initializeApp(firebaseConfig);
 const db = getFirestore(firebaseApp);
 
@@ -373,11 +415,14 @@ const resultBox = document.getElementById("resultBox");
 const specialtyCard = document.getElementById("specialtyCard");
 const mapBox = document.getElementById("map");
 const mapNote = document.getElementById("mapNote");
+const conditionInput = document.getElementById("condition");
+const suggestionBox = document.getElementById("suggestionBox");
 
 let map;
 let markers = [];
 let patientLatitude = null;
 let patientLongitude = null;
+let suggestionTimer;
 
 document.getElementById("welcome").innerText = "Welcome, Guest";
 document.getElementById("userInfo").innerText = "Testing CareConnect AI without login";
@@ -403,6 +448,72 @@ navigator.geolocation.getCurrentPosition(
         console.log("Location denied. Using city-only matching.");
     }
 );
+
+conditionInput.addEventListener("input", function(){
+    clearTimeout(suggestionTimer);
+
+    suggestionTimer = setTimeout(() => {
+        getSymptomSuggestions();
+    }, 350);
+});
+
+async function getSymptomSuggestions(){
+    const text = conditionInput.value.trim();
+
+    if(text.length < 2){
+        suggestionBox.innerHTML = "";
+        return;
+    }
+
+    try{
+        const response = await fetch(`${BACKEND_URL}/symptom_suggestions`, {
+            method:"POST",
+            headers:{
+                "Content-Type":"application/json"
+            },
+            body:JSON.stringify({
+                condition:text
+            })
+        });
+
+        const data = await response.json();
+
+        suggestionBox.innerHTML = "";
+
+        if(!data.suggestions || data.suggestions.length === 0){
+            suggestionBox.innerHTML = `
+                <div class="suggestion-title">
+                    No close matches found. Try a simpler phrase.
+                </div>
+            `;
+            return;
+        }
+
+        suggestionBox.innerHTML = `
+            <div class="suggestion-title">
+                Did you mean one of these?
+            </div>
+        `;
+
+        data.suggestions.forEach(suggestion => {
+            const button = document.createElement("button");
+
+            button.type = "button";
+            button.className = "suggestion-btn";
+            button.innerHTML = `<b>${suggestion}</b>`;
+
+            button.addEventListener("click", () => {
+                conditionInput.value = suggestion;
+                suggestionBox.innerHTML = "";
+            });
+
+            suggestionBox.appendChild(button);
+        });
+
+    }catch(error){
+        console.log("Suggestion error:", error);
+    }
+}
 
 function clearMarkers(){
     markers.forEach(marker => marker.setMap(null));
@@ -477,6 +588,7 @@ async function saveSearchToFirebase(searchData){
 form.addEventListener("submit", async function(event){
     event.preventDefault();
 
+    suggestionBox.innerHTML = "";
     resultBox.style.display = "block";
     resultBox.innerHTML = "Analyzing patient information...";
     mapBox.style.display = "none";
@@ -487,13 +599,13 @@ form.addEventListener("submit", async function(event){
         gender: document.getElementById("gender").value,
         city: document.getElementById("city").value,
         insurance: document.getElementById("insurance").value,
-        condition: document.getElementById("condition").value,
+        condition: conditionInput.value,
         latitude: patientLatitude,
         longitude: patientLongitude
     };
 
     try{
-        const response = await fetch("http://127.0.0.1:5000/recommend", {
+        const response = await fetch(`${BACKEND_URL}/recommend`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify(patientData)
@@ -602,7 +714,7 @@ form.addEventListener("submit", async function(event){
 
 async function loadAnalytics(){
     try{
-        const response = await fetch("http://127.0.0.1:5000/analytics");
+        const response = await fetch(`${BACKEND_URL}/analytics`);
         const data = await response.json();
 
         const activityList = document.getElementById("activityList");
