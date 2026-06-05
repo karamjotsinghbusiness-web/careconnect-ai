@@ -1,0 +1,631 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>CareConnect AI Dashboard</title>
+
+<style>
+*{
+    margin:0;
+    padding:0;
+    box-sizing:border-box;
+    font-family:Arial, sans-serif;
+}
+
+body{
+    background:#f3fafa;
+    color:#1f2937;
+}
+
+.dashboard{
+    display:flex;
+    min-height:100vh;
+}
+
+.sidebar{
+    width:260px;
+    background:#0f766e;
+    color:white;
+    padding:30px 20px;
+}
+
+.sidebar h2{
+    margin-bottom:35px;
+}
+
+.sidebar a{
+    display:block;
+    color:white;
+    text-decoration:none;
+    padding:14px;
+    margin-bottom:10px;
+    border-radius:10px;
+}
+
+.sidebar a:hover{
+    background:#115e59;
+}
+
+.main{
+    flex:1;
+    padding:35px;
+}
+
+.top{
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+    margin-bottom:30px;
+}
+
+.logout{
+    background:#ef4444;
+    color:white;
+    border:none;
+    padding:12px 18px;
+    border-radius:10px;
+    cursor:pointer;
+}
+
+.cards{
+    display:grid;
+    grid-template-columns:repeat(auto-fit,minmax(220px,1fr));
+    gap:20px;
+    margin-bottom:35px;
+}
+
+.card{
+    background:white;
+    padding:25px;
+    border-radius:18px;
+    box-shadow:0 10px 25px rgba(0,0,0,0.06);
+}
+
+.card h3{
+    color:#0f766e;
+    margin-bottom:10px;
+}
+
+.grid{
+    display:grid;
+    grid-template-columns:2fr 1fr;
+    gap:25px;
+}
+
+.panel{
+    background:white;
+    padding:28px;
+    border-radius:20px;
+    box-shadow:0 10px 25px rgba(0,0,0,0.06);
+    margin-bottom:25px;
+}
+
+.panel h2{
+    color:#0f766e;
+    margin-bottom:20px;
+}
+
+input,select,button{
+    width:100%;
+    padding:13px;
+    margin-bottom:13px;
+    border-radius:10px;
+    border:1px solid #d1d5db;
+}
+
+button{
+    background:#0f766e;
+    color:white;
+    font-weight:bold;
+    border:none;
+    cursor:pointer;
+}
+
+button:hover{
+    background:#115e59;
+}
+
+.result-box{
+    display:none;
+    background:#ecfdf5;
+    padding:18px;
+    border-radius:14px;
+    margin-top:15px;
+    color:#065f46;
+    font-weight:bold;
+}
+
+.provider-card,
+.advocate-card{
+    background:white;
+    padding:18px;
+    border-radius:14px;
+    margin-top:12px;
+    border:1px solid #d1d5db;
+    box-shadow:0 6px 15px rgba(0,0,0,0.06);
+}
+
+.provider-card h4,
+.advocate-card h4{
+    color:#0f766e;
+    margin-bottom:8px;
+}
+
+.advocate-card{
+    background:#f0fdfa;
+    border:1px solid #99f6e4;
+}
+
+.emergency-warning{
+    background:#fee2e2;
+    color:#991b1b;
+    padding:16px;
+    border-radius:12px;
+    margin-bottom:18px;
+}
+
+.safe-warning{
+    background:#ecfdf5;
+    color:#065f46;
+    padding:16px;
+    border-radius:12px;
+    margin-bottom:18px;
+}
+
+.ai-box{
+    background:#ecfeff;
+    color:#0f766e;
+    padding:16px;
+    border-radius:12px;
+    margin-bottom:18px;
+}
+
+.activity{
+    list-style:none;
+}
+
+.activity li{
+    padding:14px;
+    background:#f9fafb;
+    margin-bottom:10px;
+    border-radius:10px;
+}
+
+.benefit{
+    padding:12px;
+    background:#f0fdfa;
+    margin-bottom:10px;
+    border-radius:10px;
+}
+
+#map{
+    width:100%;
+    height:420px;
+    margin-top:20px;
+    border-radius:16px;
+    overflow:hidden;
+    display:none;
+    box-shadow:0 10px 25px rgba(0,0,0,0.08);
+}
+
+.map-note{
+    margin-top:10px;
+    color:#4b5563;
+    font-size:14px;
+}
+
+@media(max-width:900px){
+    .dashboard{
+        flex-direction:column;
+    }
+
+    .sidebar{
+        width:100%;
+    }
+
+    .grid{
+        grid-template-columns:1fr;
+    }
+}
+</style>
+</head>
+
+<body>
+
+<div class="dashboard">
+
+    <aside class="sidebar">
+        <h2>CareConnect AI</h2>
+        <a href="index.html">Home</a>
+        <a href="#">Dashboard</a>
+        <a href="#">Find Providers</a>
+        <a href="#">Advocates</a>
+        <a href="#">Referrals</a>
+        <a href="#">Profile</a>
+    </aside>
+
+    <main class="main">
+
+        <div class="top">
+            <div>
+                <h1 id="welcome">Welcome</h1>
+                <p id="userInfo">Loading profile...</p>
+            </div>
+
+            <button class="logout" id="logoutBtn">Logout</button>
+        </div>
+
+        <section class="cards">
+            <div class="card">
+                <h3>Recommended Specialty</h3>
+                <p id="specialtyCard">Not searched yet</p>
+            </div>
+
+            <div class="card">
+                <h3>Providers Found</h3>
+                <p>Real Missouri provider data</p>
+            </div>
+
+            <div class="card">
+                <h3>Advocate Network</h3>
+                <p>Social workers, counselors, psychologists</p>
+            </div>
+
+            <div class="card">
+                <h3>System Status</h3>
+                <p>AI model connected</p>
+            </div>
+        </section>
+
+        <div class="grid">
+
+            <section>
+                <div class="panel">
+                    <h2>Find Healthcare Support</h2>
+
+                    <form id="careForm">
+                        <input type="number" id="age" placeholder="Age" required>
+
+                        <select id="gender" required>
+                            <option value="">Select Gender</option>
+                            <option>Male</option>
+                            <option>Female</option>
+                        </select>
+
+                        <input type="text" id="city" placeholder="City" required>
+
+                        <select id="insurance" required>
+                            <option value="">Insurance</option>
+                            <option>Medicare</option>
+                            <option>Medicaid</option>
+                            <option>Blue Cross</option>
+                            <option>Aetna</option>
+                            <option>Cigna</option>
+                            <option>UnitedHealthcare</option>
+                        </select>
+
+                        <input type="text" id="condition" placeholder="Condition or symptom" required>
+
+                        <button type="submit">Run AI Recommendation</button>
+                    </form>
+
+                    <div class="result-box" id="resultBox"></div>
+
+                    <div id="map"></div>
+                    <p class="map-note" id="mapNote"></p>
+                </div>
+
+                <div class="panel">
+                    <h2>How CareConnect AI Helps</h2>
+
+                    <div class="benefit"> Finds providers faster</div>
+                    <div class="benefit"> Connects patients with advocates</div>
+                    <div class="benefit"> Uses AI specialty prediction</div>
+                    <div class="benefit"> Supports local healthcare matching</div>
+                    <div class="benefit"> Helps reduce insurance confusion</div>
+                </div>
+            </section>
+
+            <aside>
+                <div class="panel">
+                    <h2>Your Profile</h2>
+                    <p><b>Name:</b> <span id="profileName">Loading...</span></p>
+                    <p><b>Email:</b> <span id="profileEmail">Loading...</span></p>
+                    <p><b>Role:</b> <span id="profileRole">Loading...</span></p>
+                    <p><b>City:</b> <span id="profileCity">Loading...</span></p>
+                </div>
+
+                <div class="panel">
+                    <h2>Recent Activity</h2>
+                    <ul class="activity" id="activityList">
+                        <li>Dashboard opened</li>
+                        <li>AI system ready</li>
+                    </ul>
+                </div>
+            </aside>
+
+        </div>
+
+    </main>
+
+</div>
+
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/12.14.0/firebase-app.js";
+import { getFirestore, collection, addDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/12.14.0/firebase-firestore.js";
+
+const firebaseConfig = {
+    apiKey: "AIzaSyB_O-wKgjdE0pFAvbKUabJBJnnvwBuw3ho",
+    authDomain: "careconnectai-19ace.firebaseapp.com",
+    databaseURL: "https://careconnectai-19ace-default-rtdb.firebaseio.com",
+    projectId: "careconnectai-19ace",
+    storageBucket: "careconnectai-19ace.firebasestorage.app",
+    messagingSenderId: "466959301708",
+    appId: "1:466959301708:web:67853efab3d3da610108e9",
+    measurementId: "G-7YE0JPDKK9"
+};
+
+const firebaseApp = initializeApp(firebaseConfig);
+const db = getFirestore(firebaseApp);
+
+const form = document.getElementById("careForm");
+const resultBox = document.getElementById("resultBox");
+const specialtyCard = document.getElementById("specialtyCard");
+const mapBox = document.getElementById("map");
+const mapNote = document.getElementById("mapNote");
+
+let map;
+let markers = [];
+let patientLatitude = null;
+let patientLongitude = null;
+
+document.getElementById("welcome").innerText = "Welcome, Guest";
+document.getElementById("userInfo").innerText = "Testing CareConnect AI without login";
+document.getElementById("profileName").innerText = "Guest User";
+document.getElementById("profileEmail").innerText = "Not signed in";
+document.getElementById("profileRole").innerText = "Demo Patient";
+document.getElementById("profileCity").innerText = "Missouri";
+document.getElementById("logoutBtn").style.display = "none";
+
+window.initMap = function(){
+    map = new google.maps.Map(mapBox, {
+        zoom: 7,
+        center: { lat: 38.5767, lng: -92.1735 }
+    });
+};
+
+navigator.geolocation.getCurrentPosition(
+    function(position){
+        patientLatitude = position.coords.latitude;
+        patientLongitude = position.coords.longitude;
+    },
+    function(){
+        console.log("Location denied. Using city-only matching.");
+    }
+);
+
+function clearMarkers(){
+    markers.forEach(marker => marker.setMap(null));
+    markers = [];
+}
+
+function displayProvidersOnMap(providers){
+    if(!map) return;
+
+    clearMarkers();
+
+    const bounds = new google.maps.LatLngBounds();
+    let foundLocations = 0;
+
+    providers.forEach(provider => {
+        if(!provider.latitude || !provider.longitude) return;
+
+        const location = {
+            lat: Number(provider.latitude),
+            lng: Number(provider.longitude)
+        };
+
+        const providerName = provider.provider_name || "Unknown Provider";
+        const city = provider.city || "N/A";
+
+        const marker = new google.maps.Marker({
+            position: location,
+            map: map,
+            title: providerName
+        });
+
+        const mapsUrl = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(providerName + " " + city + " Missouri")}`;
+
+        const infoWindow = new google.maps.InfoWindow({
+            content: `
+                <div style="font-family:Arial;max-width:230px;">
+                    <h3 style="color:#0f766e;">${providerName}</h3>
+                    <p><b>Specialty:</b> ${provider.specialty || "N/A"}</p>
+                    <p><b>City:</b> ${city}</p>
+                    <p><b>Phone:</b> ${provider.phone || "N/A"}</p>
+                    <a href="${mapsUrl}" target="_blank">Open in Google Maps</a>
+                </div>
+            `
+        });
+
+        marker.addListener("click", () => {
+            infoWindow.open(map, marker);
+        });
+
+        markers.push(marker);
+        bounds.extend(location);
+        foundLocations++;
+    });
+
+    if(foundLocations > 0){
+        mapBox.style.display = "block";
+        mapNote.innerText = "Map shows providers with available coordinates.";
+        map.fitBounds(bounds);
+    }else{
+        mapBox.style.display = "none";
+        mapNote.innerText = "No provider coordinates found yet.";
+    }
+}
+
+async function saveSearchToFirebase(searchData){
+    await addDoc(collection(db, "patient_searches"), {
+        ...searchData,
+        createdAt: serverTimestamp()
+    });
+}
+
+form.addEventListener("submit", async function(event){
+    event.preventDefault();
+
+    resultBox.style.display = "block";
+    resultBox.innerHTML = "Analyzing patient information...";
+    mapBox.style.display = "none";
+    mapNote.innerText = "";
+
+    const patientData = {
+        age: document.getElementById("age").value,
+        gender: document.getElementById("gender").value,
+        city: document.getElementById("city").value,
+        insurance: document.getElementById("insurance").value,
+        condition: document.getElementById("condition").value,
+        latitude: patientLatitude,
+        longitude: patientLongitude
+    };
+
+    try{
+        const response = await fetch("http://127.0.0.1:5000/recommend", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(patientData)
+        });
+
+        const data = await response.json();
+
+        if(!response.ok){
+            throw new Error(data.error || "Backend error");
+        }
+
+        const specialty = data.specialty || "No specialty returned";
+        const confidence = data.confidence || "N/A";
+        const emergency = data.emergency || {};
+        const providers = Array.isArray(data.providers) ? data.providers : [];
+        const advocates = Array.isArray(data.advocates) ? data.advocates : [];
+
+        specialtyCard.innerText = `${specialty} (${confidence}% confidence)`;
+
+        await saveSearchToFirebase({
+            age: patientData.age,
+            gender: patientData.gender,
+            city: patientData.city,
+            insurance: patientData.insurance,
+            condition: patientData.condition,
+            recommendedSpecialty: specialty,
+            confidence: confidence,
+            emergencyDetected: emergency.is_emergency || false,
+            providerCount: providers.length,
+            advocateCount: advocates.length,
+            topProvider: providers[0]?.provider_name || null,
+            topAdvocate: advocates[0]?.advocate_name || advocates[0]?.provider_name || null
+        });
+
+        let emergencyHTML = emergency.is_emergency
+            ? `<div class="emergency-warning"><h3>Urgent Warning</h3><p>${emergency.message}</p></div>`
+            : `<div class="safe-warning"><h3>Emergency Check</h3><p>${emergency.message || "No emergency warning detected."}</p></div>`;
+
+        let providerHTML = "";
+
+        providers.forEach(provider => {
+            const providerName = provider.provider_name || provider.name || "Unknown Provider";
+            const city = provider.city || "N/A";
+            const distance = provider.distance_miles || "Unknown";
+            const mapsUrl = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(providerName + " " + city + " Missouri")}`;
+
+            providerHTML += `
+                <div class="provider-card">
+                    <h4>${providerName}</h4>
+                    <p><b>Specialty:</b> ${provider.specialty || "N/A"}</p>
+                    <p><b>City:</b> ${city}</p>
+                    <p><b>Phone:</b> ${provider.phone || "N/A"}</p>
+                    <p><b>Credential:</b> ${provider.credential || "N/A"}</p>
+                    <p><b>Distance:</b> ${distance} miles</p>
+                    <p><b>Accepting New Patients:</b> ${provider.accepting_new_patients || "Unknown"}</p>
+                    <a href="${mapsUrl}" target="_blank">Open directions</a>
+                </div>
+            `;
+        });
+
+        let advocateHTML = "";
+
+        advocates.forEach(advocate => {
+            advocateHTML += `
+                <div class="advocate-card">
+                    <h4>${advocate.advocate_name || advocate.provider_name || advocate.name || "Unknown Advocate"}</h4>
+                    <p><b>Role:</b> ${advocate.role || advocate.specialty || "N/A"}</p>
+                    <p><b>City:</b> ${advocate.city || "N/A"}</p>
+                    <p><b>Phone:</b> ${advocate.phone || "N/A"}</p>
+                </div>
+            `;
+        });
+
+        resultBox.innerHTML = `
+            ${emergencyHTML}
+
+            <div class="ai-box">
+                <h3>AI Recommendation</h3>
+                <p><b>Recommended Specialty:</b> ${specialty}</p>
+                <p><b>Confidence Score:</b> ${confidence}%</p>
+                <p><b>Patient City:</b> ${patientData.city}</p>
+                <p><b>Insurance:</b> ${patientData.insurance}</p>
+                <p><b>Saved:</b> Search saved to Firebase.</p>
+            </div>
+
+            <h3>Closest Matching Providers</h3>
+            ${providerHTML || "<p>No providers found.</p>"}
+
+            <br>
+            <h3>Matching Advocates</h3>
+            ${advocateHTML || "<p>No advocates found.</p>"}
+        `;
+
+        displayProvidersOnMap(providers);
+        loadAnalytics();
+
+    }catch(error){
+        console.error("Dashboard error:", error);
+
+        resultBox.innerHTML = `
+            Error after connecting to backend or Firebase:<br><br>
+            <b>${error.message}</b>
+        `;
+    }
+});
+
+async function loadAnalytics(){
+    try{
+        const response = await fetch("http://127.0.0.1:5000/analytics");
+        const data = await response.json();
+
+        const activityList = document.getElementById("activityList");
+
+        let recentHTML = `<li>Total Searches: ${data.total_searches}</li>`;
+
+        data.recent_searches.forEach(search => {
+            recentHTML += `
+                <li>${search.condition} → ${search.specialty} (${search.confidence}%)</li>
+            `;
+        });
+
+        activityList.innerHTML = recentHTML;
+
+    }catch(error){
+        console.log("Analytics not loaded:", error);
+    }
+}
+</script>
+
+<script async defer
+src="https://maps.googleapis.com/maps/api/js?key=AIzaSyDms8HF9oyB6tRUAp7ZukLLkYhHWCjWYDY&callback=initMap">
+</script>
+
+</body>
+</html>
