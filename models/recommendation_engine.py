@@ -38,6 +38,32 @@ def fix_value(column, value):
     )
 
 
+def get_condition_suggestions(user_text, limit=5):
+    allowed_conditions = list(encoders["condition"].classes_)
+
+    user_text = str(user_text).lower().strip()
+
+    direct_matches = [
+        condition for condition in allowed_conditions
+        if user_text in str(condition).lower()
+    ]
+
+    close_matches = get_close_matches(
+        user_text,
+        allowed_conditions,
+        n=limit,
+        cutoff=0.2
+    )
+
+    suggestions = []
+
+    for item in direct_matches + close_matches:
+        if item not in suggestions:
+            suggestions.append(item)
+
+    return suggestions[:limit]
+
+
 def predict_specialty(patient):
     patient_copy = patient.copy()
 
@@ -139,6 +165,9 @@ if __name__ == "__main__":
         "latitude": 39.0997,
         "longitude": -94.5786
     }
+
+    print("\nSymptom Suggestions:")
+    print(get_condition_suggestions("stomach rash"))
 
     specialty, providers, advocates = recommend(sample_patient)
 
