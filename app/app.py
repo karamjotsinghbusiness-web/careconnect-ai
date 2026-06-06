@@ -168,7 +168,13 @@ def get_recommendation():
             "longitude": data.get("longitude")
         }
 
-        specialty, providers, advocates = recommend(patient)
+        (
+            specialty,
+            providers,
+            advocates,
+            nearest_clinics,
+            fallback_hospitals
+        ) = recommend(patient)
 
         emergency = detect_emergency(patient["condition"])
         confidence = confidence_score(providers, advocates)
@@ -179,7 +185,10 @@ def get_recommendation():
             "specialty": specialty,
             "confidence": confidence,
             "latitude": patient["latitude"],
-            "longitude": patient["longitude"]
+            "longitude": patient["longitude"],
+            "provider_count": len(providers),
+            "nearest_clinic_count": len(nearest_clinics),
+            "fallback_hospital_count": len(fallback_hospitals)
         })
 
         return json_response({
@@ -187,7 +196,9 @@ def get_recommendation():
             "confidence": confidence,
             "emergency": emergency,
             "providers": providers.head(5),
-            "advocates": advocates.head(5)
+            "advocates": advocates.head(5),
+            "nearest_clinics": nearest_clinics.head(3),
+            "fallback_hospitals": fallback_hospitals.head(5)
         })
 
     except Exception as error:
