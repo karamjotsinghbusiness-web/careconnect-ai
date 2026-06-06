@@ -3,7 +3,11 @@ import joblib
 from pathlib import Path
 from difflib import get_close_matches
 
-from models.provider_matcher import find_matching_providers
+from models.provider_matcher import (
+    find_matching_providers,
+    find_nearest_clinics,
+    find_nearest_hospitals_or_clinics
+)
 
 
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -152,7 +156,30 @@ def recommend(patient):
         top_n=5
     )
 
-    return predicted_specialty, providers, advocates
+    nearest_clinics = find_nearest_clinics(
+        patient_city=patient["city"],
+        patient_latitude=patient_latitude,
+        patient_longitude=patient_longitude,
+        top_n=3
+    )
+
+    fallback_hospitals = pd.DataFrame()
+
+    if providers.empty:
+        fallback_hospitals = find_nearest_hospitals_or_clinics(
+            patient_city=patient["city"],
+            patient_latitude=patient_latitude,
+            patient_longitude=patient_longitude,
+            top_n=5
+        )
+
+    return (
+        predicted_specialty,
+        providers,
+        advocates,
+        nearest_clinics,
+        fallback_hospitals
+    )
 
 
 if __name__ == "__main__":
@@ -169,7 +196,13 @@ if __name__ == "__main__":
     print("\nSymptom Suggestions:")
     print(get_condition_suggestions("stomach rash"))
 
-    specialty, providers, advocates = recommend(sample_patient)
+    (
+        specialty,
+        providers,
+        advocates,
+        nearest_clinics,
+        fallback_hospitals
+    ) = recommend(sample_patient)
 
     print("\nRecommended Specialty:")
     print(specialty)
@@ -191,6 +224,42 @@ if __name__ == "__main__":
         ]
 
         print(providers[columns_to_show])
+
+    print("\nNearest Clinics:")
+    if nearest_clinics.empty:
+        print("No clinics found.")
+    else:
+        columns_to_show = [
+            col for col in [
+                "provider_id",
+                "provider_name",
+                "specialty",
+                "city",
+                "phone",
+                "distance_miles"
+            ]
+            if col in nearest_clinics.columns
+        ]
+
+        print(nearest_clinics[columns_to_show])
+
+    print("\nFallback Hospitals / Clinics:")
+    if fallback_hospitals.empty:
+        print("No fallback hospitals needed or found.")
+    else:
+        columns_to_show = [
+            col for col in [
+                "provider_id",
+                "provider_name",
+                "specialty",
+                "city",
+                "phone",
+                "distance_miles"
+            ]
+            if col in fallback_hospitals.columns
+        ]
+
+        print(fallback_hospitals[columns_to_show])
 
     print("\nMatching Advocates:")
     if advocates.empty:
