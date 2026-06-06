@@ -2,50 +2,64 @@ import pandas as pd
 from pathlib import Path
 from math import radians, sin, cos, sqrt, atan2
 
-
 BASE_DIR = Path(__file__).resolve().parent.parent
-
-DATA_PATH = (
-    BASE_DIR
-    / "data"
-    / "missouri_healthcare_linked_dataset.xlsx"
-)
+DATA_PATH = BASE_DIR / "data" / "missouri_healthcare_linked_dataset.xlsx"
 
 
 def calculate_distance_miles(lat1, lon1, lat2, lon2):
     radius_miles = 3958.8
 
-    lat1 = radians(float(lat1))
-    lon1 = radians(float(lon1))
-    lat2 = radians(float(lat2))
-    lon2 = radians(float(lon2))
+    lat1, lon1, lat2, lon2 = map(float, [lat1, lon1, lat2, lon2])
+
+    lat1 = radians(lat1)
+    lon1 = radians(lon1)
+    lat2 = radians(lat2)
+    lon2 = radians(lon2)
 
     dlat = lat2 - lat1
     dlon = lon2 - lon1
 
-    a = (
-        sin(dlat / 2) ** 2
-        + cos(lat1) * cos(lat2) * sin(dlon / 2) ** 2
-    )
-
+    a = sin(dlat / 2) ** 2 + cos(lat1) * cos(lat2) * sin(dlon / 2) ** 2
     c = 2 * atan2(sqrt(a), sqrt(1 - a))
 
     return round(radius_miles * c, 2)
 
 
 def load_providers():
-    providers = pd.read_excel(
-        DATA_PATH,
-        sheet_name="Providers"
-    )
-
-    providers.columns = (
-        providers.columns
-        .str.lower()
-        .str.strip()
-    )
-
+    providers = pd.read_excel(DATA_PATH, sheet_name="Providers")
+    providers.columns = providers.columns.str.lower().str.strip()
     return providers
+
+
+def add_distance(df, patient_latitude=None, patient_longitude=None):
+    df = df.copy()
+
+    if (
+        patient_latitude is not None
+        and patient_longitude is not None
+        and "latitude" in df.columns
+        and "longitude" in df.columns
+    ):
+        df = df.dropna(subset=["latitude", "longitude"]).copy()
+
+        if df.empty:
+            return df
+
+        df["distance_miles"] = df.apply(
+            lambda row: calculate_distance_miles(
+                patient_latitude,
+                patient_longitude,
+                row["latitude"],
+                row["longitude"]
+            ),
+            axis=1
+        )
+
+        df = df.sort_values("distance_miles")
+    else:
+        df["distance_miles"] = "Unknown"
+
+    return df
 
 
 def find_matching_providers(
@@ -57,30 +71,13 @@ def find_matching_providers(
 ):
     providers = load_providers()
 
-    if "specialty" not in providers.columns:
-        raise ValueError("Providers sheet must contain a 'specialty' column.")
-
-    if "city" not in providers.columns:
-        raise ValueError("Providers sheet must contain a 'city' column.")
-
     predicted_specialty = str(predicted_specialty).lower().strip()
     patient_city = str(patient_city).lower().strip()
 
-    providers["specialty_clean"] = (
-        providers["specialty"]
-        .astype(str)
-        .str.lower()
-        .str.strip()
-    )
+    providers["specialty_clean"] = providers["specialty"].astype(str).str.lower().str.strip()
+    providers["city_clean"] = providers["city"].astype(str).str.lower().str.strip()
 
-    providers["city_clean"] = (
-        providers["city"]
-        .astype(str)
-        .str.lower()
-        .str.strip()
-    )
-
-    specialty_matches = providers[
+    matches = providers[
         providers["specialty_clean"].str.contains(
             predicted_specialty,
             na=False,
@@ -88,10 +85,10 @@ def find_matching_providers(
         )
     ].copy()
 
-    if specialty_matches.empty:
+    if matches.empty:
         first_word = predicted_specialty.split()[0]
 
-        specialty_matches = providers[
+        matches = providers[
             providers["specialty_clean"].str.contains(
                 first_word,
                 na=False,
@@ -99,67 +96,76 @@ def find_matching_providers(
             )
         ].copy()
 
-    if specialty_matches.empty:
+    if matches.empty:
         return pd.DataFrame()
 
-    city_matches = specialty_matches[
-        specialty_matches["city_clean"] == patient_city
-    ].copy()
+    city_matches = matches[matches["city_clean"] == patient_city].copy()
 
     if not city_matches.empty:
-        final_matches = city_matches
-    else:
-        final_matches = specialty_matches
+        matches = city_matches
 
-    if final_matches.empty:
+    matches = add_distance(matches, patient_latitude, patient_longitude)
+
+    return matches.head(top_n)
+
+
+def find_nearest_clinics(
+    patient_city,
+    patient_latitude=None,
+    patient_longitude=None,
+    top_n=3
+):
+    providers = load_providers()
+
+    providers["search_text"] = (
+        providers.get("specialty", "").astype(str) + " " +
+        providers.get("source", "").astype(str) + " " +
+        providers.get("organization", "").astype(str) + " " +
+        providers.get("provider_name", "").astype(str)
+    ).str.lower()
+
+    clinics = providers[
+        providers["search_text"].str.contains(
+            "rural health clinic|clinic|health center",
+            na=False,
+            regex=True
+        )
+    ].copy()
+
+    if clinics.empty:
         return pd.DataFrame()
 
-    final_matches["distance_miles"] = "Unknown"
+    clinics = add_distance(clinics, patient_latitude, patient_longitude)
 
-    has_coordinates = (
-        patient_latitude is not None
-        and patient_longitude is not None
-        and "latitude" in final_matches.columns
-        and "longitude" in final_matches.columns
-    )
+    return clinics.head(top_n)
 
-    if has_coordinates:
-        final_matches = final_matches.dropna(
-            subset=["latitude", "longitude"]
-        ).copy()
 
-        if final_matches.empty:
-            return pd.DataFrame()
+def find_nearest_hospitals_or_clinics(
+    patient_city,
+    patient_latitude=None,
+    patient_longitude=None,
+    top_n=5
+):
+    providers = load_providers()
 
-        final_matches["distance_miles"] = final_matches.apply(
-            lambda row: calculate_distance_miles(
-                patient_latitude,
-                patient_longitude,
-                row["latitude"],
-                row["longitude"]
-            ),
-            axis=1
+    providers["search_text"] = (
+        providers.get("specialty", "").astype(str) + " " +
+        providers.get("source", "").astype(str) + " " +
+        providers.get("organization", "").astype(str) + " " +
+        providers.get("provider_name", "").astype(str)
+    ).str.lower()
+
+    hospitals = providers[
+        providers["search_text"].str.contains(
+            "hospital|medical center|health center|rural health clinic|clinic",
+            na=False,
+            regex=True
         )
+    ].copy()
 
-        final_matches = final_matches.sort_values(
-            by="distance_miles",
-            ascending=True
-        )
+    if hospitals.empty:
+        hospitals = providers.copy()
 
-    return final_matches.head(top_n)
+    hospitals = add_distance(hospitals, patient_latitude, patient_longitude)
 
-
-if __name__ == "__main__":
-    results = find_matching_providers(
-        predicted_specialty="Cardiology",
-        patient_city="Kansas City",
-        patient_latitude=39.0997,
-        patient_longitude=-94.5786,
-        top_n=5
-    )
-
-    if results.empty:
-        print("No matching providers found.")
-    else:
-        print("\nClosest Matching Providers:")
-        print(results)
+    return hospitals.head(top_n)
