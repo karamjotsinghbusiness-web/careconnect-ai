@@ -12,7 +12,7 @@ from models.provider_matcher import (
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 SAVE_DIR = BASE_DIR / "saved_models"
-DATA_PATH = BASE_DIR / "data" / "missouri_healthcare_linked_dataset.xlsx"
+DATA_PATH = BASE_DIR / "data" / "missouri_healthcare_linked_dataset_with_rural_clinics.xlsx"
 
 
 model = joblib.load(SAVE_DIR / "specialty_model.pkl")
