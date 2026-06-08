@@ -34,7 +34,8 @@ def load_providers():
 def safe_text_column(df, column_name):
     if column_name in df.columns:
         return df[column_name].astype(str)
-    return ""
+
+    return pd.Series([""] * len(df), index=df.index)
 
 
 def add_distance(df, patient_latitude=None, patient_longitude=None):
@@ -47,6 +48,8 @@ def add_distance(df, patient_latitude=None, patient_longitude=None):
         and str(patient_longitude).strip() != ""
         and str(patient_latitude).lower() != "none"
         and str(patient_longitude).lower() != "none"
+        and str(patient_latitude).lower() != "null"
+        and str(patient_longitude).lower() != "null"
     )
 
     has_provider_location = (
@@ -95,6 +98,34 @@ def create_search_text(providers):
     ).str.lower()
 
     return providers
+
+
+def clean_rural_clinic_rows(clinics):
+    clinics = clinics.copy()
+
+    if "clinic_name" not in clinics.columns:
+        clinics["clinic_name"] = ""
+
+    if "facility_name" in clinics.columns:
+        clinics["clinic_name"] = clinics["clinic_name"].fillna("")
+        clinics.loc[
+            clinics["clinic_name"].astype(str).str.strip() == "",
+            "clinic_name"
+        ] = clinics["facility_name"]
+
+    if "organization" in clinics.columns:
+        clinics["clinic_name"] = clinics["clinic_name"].fillna("")
+        clinics.loc[
+            clinics["clinic_name"].astype(str).str.strip() == "",
+            "clinic_name"
+        ] = clinics["organization"]
+
+    if "provider_name" in clinics.columns:
+        clinics.loc[:, "provider_name"] = clinics["clinic_name"]
+
+    clinics.loc[:, "specialty"] = "Rural Health Clinic"
+
+    return clinics
 
 
 def find_matching_providers(
@@ -174,18 +205,32 @@ def find_nearest_clinics(
     top_n=3
 ):
     providers = load_providers()
-    providers = create_search_text(providers)
+
+    if "source" not in providers.columns:
+        return pd.DataFrame()
 
     clinics = providers[
-        providers["search_text"].str.contains(
-            "rural health clinic|clinic|health center|family clinic|community health",
-            na=False,
-            regex=True
-        )
+        providers["source"]
+        .astype(str)
+        .str.lower()
+        .str.contains("rural health clinics", na=False)
     ].copy()
 
     if clinics.empty:
+        providers = create_search_text(providers)
+
+        clinics = providers[
+            providers["search_text"].str.contains(
+                "rural health clinic",
+                na=False,
+                regex=False
+            )
+        ].copy()
+
+    if clinics.empty:
         return pd.DataFrame()
+
+    clinics = clean_rural_clinic_rows(clinics)
 
     clinics = add_distance(
         clinics,
@@ -207,7 +252,7 @@ def find_nearest_hospitals_or_clinics(
 
     hospitals_or_clinics = providers[
         providers["search_text"].str.contains(
-            "hospital|medical center|health center|rural health clinic|clinic|community health",
+            "hospital|medical center|health center|rural health clinic|community health",
             na=False,
             regex=True
         )
@@ -233,17 +278,19 @@ if __name__ == "__main__":
         top_n=5
     )
 
-    print(results[
-        [
-            col for col in [
-                "provider_id",
-                "provider_name",
-                "specialty",
-                "city",
-                "latitude",
-                "longitude",
-                "distance_miles"
-            ]
-            if col in results.columns
+    columns_to_show = [
+        col for col in [
+            "provider_id",
+            "clinic_name",
+            "provider_name",
+            "specialty",
+            "city",
+            "latitude",
+            "longitude",
+            "distance_miles",
+            "source"
         ]
-    ])
+        if col in results.columns
+    ]
+
+    print(results[columns_to_show])
