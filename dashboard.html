@@ -173,7 +173,9 @@ button:hover{
 }
 
 .provider-card,
-.advocate-card{
+.advocate-card,
+.clinic-card,
+.hospital-card{
     background:white;
     padding:18px;
     border-radius:14px;
@@ -183,7 +185,9 @@ button:hover{
 }
 
 .provider-card h4,
-.advocate-card h4{
+.advocate-card h4,
+.clinic-card h4,
+.hospital-card h4{
     color:#0f766e;
     margin-bottom:8px;
 }
@@ -191,6 +195,23 @@ button:hover{
 .advocate-card{
     background:#f0fdfa;
     border:1px solid #99f6e4;
+}
+
+.clinic-card{
+    background:#f8fffe;
+    border:1px solid #99f6e4;
+}
+
+.hospital-card{
+    background:#fff7ed;
+    border:1px solid #fed7aa;
+}
+
+.section-note{
+    color:#4b5563;
+    font-size:14px;
+    margin-top:5px;
+    margin-bottom:10px;
 }
 
 .emergency-warning{
@@ -304,8 +325,8 @@ button:hover{
             </div>
 
             <div class="card">
-                <h3>Advocate Network</h3>
-                <p>Social workers, counselors, psychologists</p>
+                <h3>Rural Clinic Support</h3>
+                <p>Nearest clinics shown when available</p>
             </div>
 
             <div class="card">
@@ -359,10 +380,10 @@ button:hover{
                     <h2>How CareConnect AI Helps</h2>
 
                     <div class="benefit">Finds providers faster</div>
-                    <div class="benefit">Connects patients with advocates</div>
+                    <div class="benefit">Shows nearest rural clinics</div>
+                    <div class="benefit">Shows fallback hospitals or clinics when no specialist appears</div>
                     <div class="benefit">Uses AI specialty prediction</div>
-                    <div class="benefit">Supports local healthcare matching</div>
-                    <div class="benefit">Helps reduce insurance confusion</div>
+                    <div class="benefit">Helps reduce healthcare confusion</div>
                 </div>
             </section>
 
@@ -395,7 +416,7 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/12.14.0/fireba
 import { getFirestore, collection, addDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/12.14.0/firebase-firestore.js";
 
 const firebaseConfig = {
-     apiKey: "AIzaSyB_O-wKgjdE0pFAvbKUabJBJnnvwBuw3ho",
+    apiKey: "AIzaSyB_O-wKgjdE0pFAvbKUabJBJnnvwBuw3ho",
     authDomain: "careconnectai-19ace.firebaseapp.com",
     databaseURL: "https://careconnectai-19ace-default-rtdb.firebaseio.com",
     projectId: "careconnectai-19ace",
@@ -403,6 +424,7 @@ const firebaseConfig = {
     messagingSenderId: "466959301708",
     appId: "1:466959301708:web:67853efab3d3da610108e9",
     measurementId: "G-7YE0JPDKK9"
+
 };
 
 const BACKEND_URL = "https://careconnect-ai-production-c747.up.railway.app";
@@ -468,12 +490,8 @@ async function getSymptomSuggestions(){
     try{
         const response = await fetch(`${BACKEND_URL}/symptom_suggestions`, {
             method:"POST",
-            headers:{
-                "Content-Type":"application/json"
-            },
-            body:JSON.stringify({
-                condition:text
-            })
+            headers:{ "Content-Type":"application/json" },
+            body:JSON.stringify({ condition:text })
         });
 
         const data = await response.json();
@@ -520,7 +538,65 @@ function clearMarkers(){
     markers = [];
 }
 
-function displayProvidersOnMap(providers){
+function getName(item){
+    return (
+        item.provider_name ||
+        item.clinic_name ||
+        item.facility_name ||
+        item.organization ||
+        item.name ||
+        "Unknown"
+    );
+}
+
+function getMapsUrl(item){
+    const itemName = getName(item);
+    const city = item.city || "";
+    return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(itemName + " " + city + " Missouri")}`;
+}
+
+function addMarker(item, label){
+    if(!map) return;
+    if(!item.latitude || !item.longitude) return;
+
+    const location = {
+        lat: Number(item.latitude),
+        lng: Number(item.longitude)
+    };
+
+    const itemName = getName(item);
+    const city = item.city || "N/A";
+
+    const marker = new google.maps.Marker({
+        position: location,
+        map: map,
+        title: itemName,
+        label: label
+    });
+
+    const infoWindow = new google.maps.InfoWindow({
+        content: `
+            <div style="font-family:Arial;max-width:230px;">
+                <h3 style="color:#0f766e;">${itemName}</h3>
+                <p><b>City:</b> ${city}</p>
+                <p><b>Specialty:</b> ${item.specialty || "N/A"}</p>
+                <p><b>Phone:</b> ${item.phone || "N/A"}</p>
+                <p><b>Distance:</b> ${item.distance_miles || "Unknown"} miles</p>
+                <a href="${getMapsUrl(item)}" target="_blank">Open in Google Maps</a>
+            </div>
+        `
+    });
+
+    marker.addListener("click", () => {
+        infoWindow.open(map, marker);
+    });
+
+    markers.push(marker);
+
+    return location;
+}
+
+function displayLocationsOnMap(providers, nearestClinics, fallbackHospitals){
     if(!map) return;
 
     clearMarkers();
@@ -528,54 +604,81 @@ function displayProvidersOnMap(providers){
     const bounds = new google.maps.LatLngBounds();
     let foundLocations = 0;
 
-    providers.forEach(provider => {
-        if(!provider.latitude || !provider.longitude) return;
+    providers.forEach(item => {
+        const location = addMarker(item, "P");
+        if(location){
+            bounds.extend(location);
+            foundLocations++;
+        }
+    });
 
-        const location = {
-            lat: Number(provider.latitude),
-            lng: Number(provider.longitude)
-        };
+    nearestClinics.forEach(item => {
+        const location = addMarker(item, "C");
+        if(location){
+            bounds.extend(location);
+            foundLocations++;
+        }
+    });
 
-        const providerName = provider.provider_name || "Unknown Provider";
-        const city = provider.city || "N/A";
-
-        const marker = new google.maps.Marker({
-            position: location,
-            map: map,
-            title: providerName
-        });
-
-        const mapsUrl = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(providerName + " " + city + " Missouri")}`;
-
-        const infoWindow = new google.maps.InfoWindow({
-            content: `
-                <div style="font-family:Arial;max-width:230px;">
-                    <h3 style="color:#0f766e;">${providerName}</h3>
-                    <p><b>Specialty:</b> ${provider.specialty || "N/A"}</p>
-                    <p><b>City:</b> ${city}</p>
-                    <p><b>Phone:</b> ${provider.phone || "N/A"}</p>
-                    <a href="${mapsUrl}" target="_blank">Open in Google Maps</a>
-                </div>
-            `
-        });
-
-        marker.addListener("click", () => {
-            infoWindow.open(map, marker);
-        });
-
-        markers.push(marker);
-        bounds.extend(location);
-        foundLocations++;
+    fallbackHospitals.forEach(item => {
+        const location = addMarker(item, "H");
+        if(location){
+            bounds.extend(location);
+            foundLocations++;
+        }
     });
 
     if(foundLocations > 0){
         mapBox.style.display = "block";
-        mapNote.innerText = "Map shows providers with available coordinates.";
+        mapNote.innerText = "Map shows providers, rural clinics, and fallback hospital/clinic options with available coordinates.";
         map.fitBounds(bounds);
     }else{
         mapBox.style.display = "none";
-        mapNote.innerText = "No provider coordinates found yet.";
+        mapNote.innerText = "No coordinates found for the returned locations.";
     }
+}
+
+function buildProviderCards(items, cardClass){
+    let html = "";
+
+    items.forEach(item => {
+        const itemName = getName(item);
+        const city = item.city || "N/A";
+        const distance = item.distance_miles || "Unknown";
+        const mapsUrl = getMapsUrl(item);
+
+        html += `
+            <div class="${cardClass}">
+                <h4>${itemName}</h4>
+                <p><b>Specialty:</b> ${item.specialty || "N/A"}</p>
+                <p><b>City:</b> ${city}</p>
+                <p><b>Phone:</b> ${item.phone || "N/A"}</p>
+                <p><b>Credential:</b> ${item.credential || "N/A"}</p>
+                <p><b>Distance:</b> ${distance} miles</p>
+                <p><b>Accepting New Patients:</b> ${item.accepting_new_patients || "Unknown"}</p>
+                <a href="${mapsUrl}" target="_blank">Open directions</a>
+            </div>
+        `;
+    });
+
+    return html;
+}
+
+function buildAdvocateCards(advocates){
+    let html = "";
+
+    advocates.forEach(advocate => {
+        html += `
+            <div class="advocate-card">
+                <h4>${advocate.advocate_name || advocate.provider_name || advocate.name || "Unknown Advocate"}</h4>
+                <p><b>Role:</b> ${advocate.role || advocate.specialty || "N/A"}</p>
+                <p><b>City:</b> ${advocate.city || "N/A"}</p>
+                <p><b>Phone:</b> ${advocate.phone || "N/A"}</p>
+            </div>
+        `;
+    });
+
+    return html;
 }
 
 async function saveSearchToFirebase(searchData){
@@ -620,8 +723,11 @@ form.addEventListener("submit", async function(event){
         const specialty = data.specialty || "No specialty returned";
         const confidence = data.confidence || "N/A";
         const emergency = data.emergency || {};
+
         const providers = Array.isArray(data.providers) ? data.providers : [];
         const advocates = Array.isArray(data.advocates) ? data.advocates : [];
+        const nearestClinics = Array.isArray(data.nearest_clinics) ? data.nearest_clinics : [];
+        const fallbackHospitals = Array.isArray(data.fallback_hospitals) ? data.fallback_hospitals : [];
 
         specialtyCard.innerText = `${specialty} (${confidence}% confidence)`;
 
@@ -635,8 +741,12 @@ form.addEventListener("submit", async function(event){
             confidence: confidence,
             emergencyDetected: emergency.is_emergency || false,
             providerCount: providers.length,
+            nearestClinicCount: nearestClinics.length,
+            fallbackHospitalCount: fallbackHospitals.length,
             advocateCount: advocates.length,
             topProvider: providers[0]?.provider_name || null,
+            topClinic: getName(nearestClinics[0] || {}),
+            topHospital: getName(fallbackHospitals[0] || {}),
             topAdvocate: advocates[0]?.advocate_name || advocates[0]?.provider_name || null
         });
 
@@ -644,40 +754,10 @@ form.addEventListener("submit", async function(event){
             ? `<div class="emergency-warning"><h3>Urgent Warning</h3><p>${emergency.message}</p></div>`
             : `<div class="safe-warning"><h3>Emergency Check</h3><p>${emergency.message || "No emergency warning detected."}</p></div>`;
 
-        let providerHTML = "";
-
-        providers.forEach(provider => {
-            const providerName = provider.provider_name || provider.name || "Unknown Provider";
-            const city = provider.city || "N/A";
-            const distance = provider.distance_miles || "Unknown";
-            const mapsUrl = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(providerName + " " + city + " Missouri")}`;
-
-            providerHTML += `
-                <div class="provider-card">
-                    <h4>${providerName}</h4>
-                    <p><b>Specialty:</b> ${provider.specialty || "N/A"}</p>
-                    <p><b>City:</b> ${city}</p>
-                    <p><b>Phone:</b> ${provider.phone || "N/A"}</p>
-                    <p><b>Credential:</b> ${provider.credential || "N/A"}</p>
-                    <p><b>Distance:</b> ${distance} miles</p>
-                    <p><b>Accepting New Patients:</b> ${provider.accepting_new_patients || "Unknown"}</p>
-                    <a href="${mapsUrl}" target="_blank">Open directions</a>
-                </div>
-            `;
-        });
-
-        let advocateHTML = "";
-
-        advocates.forEach(advocate => {
-            advocateHTML += `
-                <div class="advocate-card">
-                    <h4>${advocate.advocate_name || advocate.provider_name || advocate.name || "Unknown Advocate"}</h4>
-                    <p><b>Role:</b> ${advocate.role || advocate.specialty || "N/A"}</p>
-                    <p><b>City:</b> ${advocate.city || "N/A"}</p>
-                    <p><b>Phone:</b> ${advocate.phone || "N/A"}</p>
-                </div>
-            `;
-        });
+        const providerHTML = buildProviderCards(providers, "provider-card");
+        const clinicHTML = buildProviderCards(nearestClinics, "clinic-card");
+        const hospitalHTML = buildProviderCards(fallbackHospitals, "hospital-card");
+        const advocateHTML = buildAdvocateCards(advocates);
 
         resultBox.innerHTML = `
             ${emergencyHTML}
@@ -692,14 +772,33 @@ form.addEventListener("submit", async function(event){
             </div>
 
             <h3>Closest Matching Providers</h3>
-            ${providerHTML || "<p>No providers found.</p>"}
+            <p class="section-note">Specialty providers matched by the AI prediction.</p>
+            ${providerHTML || "<p>No exact specialty providers found.</p>"}
 
             <br>
+
+            <h3>Nearest Rural Clinics</h3>
+            <p class="section-note">Closest rural clinics or health centers based on available latitude and longitude.</p>
+            ${clinicHTML || "<p>No nearby rural clinics found.</p>"}
+
+            <br>
+
+            <h3>Fallback Hospitals / Clinics</h3>
+            <p class="section-note">Shown when no exact specialty provider is found.</p>
+            ${hospitalHTML || "<p>Fallback hospitals are not needed because providers were found.</p>"}
+
+            <br>
+
             <h3>Matching Advocates</h3>
             ${advocateHTML || "<p>No advocates found.</p>"}
         `;
 
-        displayProvidersOnMap(providers);
+        displayLocationsOnMap(
+            providers,
+            nearestClinics,
+            fallbackHospitals
+        );
+
         loadAnalytics();
 
     }catch(error){
