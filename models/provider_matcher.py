@@ -38,18 +38,63 @@ def safe_text_column(df, column_name):
     return pd.Series([""] * len(df), index=df.index)
 
 
-def add_distance(df, patient_latitude=None, patient_longitude=None):
+def has_valid_location(lat, lon):
+    return (
+        lat is not None
+        and lon is not None
+        and str(lat).strip() != ""
+        and str(lon).strip() != ""
+        and str(lat).lower() != "none"
+        and str(lon).lower() != "none"
+        and str(lat).lower() != "null"
+        and str(lon).lower() != "null"
+    )
+
+
+def get_city_coordinates(patient_city):
+    providers = load_providers()
+
+    if "city" not in providers.columns:
+        return None, None
+
+    if "latitude" not in providers.columns or "longitude" not in providers.columns:
+        return None, None
+
+    city_matches = providers[
+        providers["city"]
+        .astype(str)
+        .str.lower()
+        .str.strip()
+        == str(patient_city).lower().strip()
+    ].copy()
+
+    city_matches = city_matches.dropna(
+        subset=["latitude", "longitude"]
+    )
+
+    if city_matches.empty:
+        return None, None
+
+    latitude = city_matches["latitude"].astype(float).mean()
+    longitude = city_matches["longitude"].astype(float).mean()
+
+    return latitude, longitude
+
+
+def add_distance(
+    df,
+    patient_latitude=None,
+    patient_longitude=None,
+    patient_city=None
+):
     df = df.copy()
 
-    has_patient_location = (
-        patient_latitude is not None
-        and patient_longitude is not None
-        and str(patient_latitude).strip() != ""
-        and str(patient_longitude).strip() != ""
-        and str(patient_latitude).lower() != "none"
-        and str(patient_longitude).lower() != "none"
-        and str(patient_latitude).lower() != "null"
-        and str(patient_longitude).lower() != "null"
+    if not has_valid_location(patient_latitude, patient_longitude):
+        patient_latitude, patient_longitude = get_city_coordinates(patient_city)
+
+    has_patient_location = has_valid_location(
+        patient_latitude,
+        patient_longitude
     )
 
     has_provider_location = (
@@ -192,7 +237,8 @@ def find_matching_providers(
     matches = add_distance(
         matches,
         patient_latitude,
-        patient_longitude
+        patient_longitude,
+        patient_city
     )
 
     return matches.head(top_n)
@@ -235,7 +281,8 @@ def find_nearest_clinics(
     clinics = add_distance(
         clinics,
         patient_latitude,
-        patient_longitude
+        patient_longitude,
+        patient_city
     )
 
     return clinics.head(top_n)
@@ -264,7 +311,8 @@ def find_nearest_hospitals_or_clinics(
     hospitals_or_clinics = add_distance(
         hospitals_or_clinics,
         patient_latitude,
-        patient_longitude
+        patient_longitude,
+        patient_city
     )
 
     return hospitals_or_clinics.head(top_n)
@@ -273,8 +321,8 @@ def find_nearest_hospitals_or_clinics(
 if __name__ == "__main__":
     results = find_nearest_clinics(
         patient_city="Kansas City",
-        patient_latitude=39.0997,
-        patient_longitude=-94.5786,
+        patient_latitude=None,
+        patient_longitude=None,
         top_n=5
     )
 
