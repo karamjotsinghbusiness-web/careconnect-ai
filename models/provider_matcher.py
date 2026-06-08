@@ -48,37 +48,71 @@ def has_valid_location(lat, lon):
         and str(lon).lower() != "none"
         and str(lat).lower() != "null"
         and str(lon).lower() != "null"
+        and str(lat).lower() != "nan"
+        and str(lon).lower() != "nan"
     )
 
 
 def get_city_coordinates(patient_city):
     providers = load_providers()
 
-    if "city" not in providers.columns:
-        return None, None
+    if (
+        "city" in providers.columns
+        and "latitude" in providers.columns
+        and "longitude" in providers.columns
+    ):
+        city_matches = providers[
+            providers["city"]
+            .astype(str)
+            .str.lower()
+            .str.strip()
+            == str(patient_city).lower().strip()
+        ].copy()
 
-    if "latitude" not in providers.columns or "longitude" not in providers.columns:
-        return None, None
+        city_matches = city_matches.dropna(
+            subset=["latitude", "longitude"]
+        )
 
-    city_matches = providers[
-        providers["city"]
-        .astype(str)
-        .str.lower()
-        .str.strip()
-        == str(patient_city).lower().strip()
-    ].copy()
+        if not city_matches.empty:
+            latitude = city_matches["latitude"].astype(float).mean()
+            longitude = city_matches["longitude"].astype(float).mean()
+            return latitude, longitude
 
-    city_matches = city_matches.dropna(
-        subset=["latitude", "longitude"]
-    )
+    missouri_city_coordinates = {
+        "kansas city": (39.0997, -94.5786),
+        "st louis": (38.6270, -90.1994),
+        "saint louis": (38.6270, -90.1994),
+        "springfield": (37.2089, -93.2923),
+        "columbia": (38.9517, -92.3341),
+        "jefferson city": (38.5767, -92.1735),
+        "joplin": (37.0842, -94.5133),
+        "cape girardeau": (37.3059, -89.5181),
+        "kirksville": (40.1948, -92.5832),
+        "sedalia": (38.7045, -93.2283),
+        "branson": (36.6437, -93.2185),
+        "rolla": (37.9514, -91.7713),
+        "hannibal": (39.7084, -91.3585),
+        "poplar bluff": (36.7570, -90.3929),
+        "farmington": (37.7809, -90.4218),
+        "west plains": (36.7281, -91.8524),
+        "lebanon": (37.6806, -92.6638),
+        "maryville": (40.3461, -94.8725),
+        "warrensburg": (38.7628, -93.7361),
+        "marshall": (39.1231, -93.1969),
+        "moberly": (39.4184, -92.4382),
+        "mexico": (39.1698, -91.8829),
+        "nevada": (37.8392, -94.3547),
+        "sikeston": (36.8767, -89.5879),
+        "kennett": (36.2362, -90.0556),
+        "camdenton": (38.0081, -92.7446)
+    }
 
-    if city_matches.empty:
-        return None, None
+    city_key = str(patient_city).lower().strip()
 
-    latitude = city_matches["latitude"].astype(float).mean()
-    longitude = city_matches["longitude"].astype(float).mean()
+    if city_key in missouri_city_coordinates:
+        return missouri_city_coordinates[city_key]
 
-    return latitude, longitude
+    return None, None
 
 
 def add_distance(
@@ -252,15 +286,15 @@ def find_nearest_clinics(
 ):
     providers = load_providers()
 
-    if "source" not in providers.columns:
-        return pd.DataFrame()
-
-    clinics = providers[
-        providers["source"]
-        .astype(str)
-        .str.lower()
-        .str.contains("rural health clinics", na=False)
-    ].copy()
+    if "source" in providers.columns:
+        clinics = providers[
+            providers["source"]
+            .astype(str)
+            .str.lower()
+            .str.contains("rural health clinics", na=False)
+        ].copy()
+    else:
+        clinics = pd.DataFrame()
 
     if clinics.empty:
         providers = create_search_text(providers)
@@ -284,6 +318,13 @@ def find_nearest_clinics(
         patient_longitude,
         patient_city
     )
+
+    if "distance_miles" in clinics.columns:
+        if not clinics["distance_miles"].astype(str).eq("Unknown").all():
+            clinics = clinics.sort_values(
+                by="distance_miles",
+                ascending=True
+            )
 
     return clinics.head(top_n)
 
@@ -315,30 +356,47 @@ def find_nearest_hospitals_or_clinics(
         patient_city
     )
 
+    if "distance_miles" in hospitals_or_clinics.columns:
+        if not hospitals_or_clinics["distance_miles"].astype(str).eq("Unknown").all():
+            hospitals_or_clinics = hospitals_or_clinics.sort_values(
+                by="distance_miles",
+                ascending=True
+            )
+
     return hospitals_or_clinics.head(top_n)
 
 
 if __name__ == "__main__":
-    results = find_nearest_clinics(
-        patient_city="Kansas City",
-        patient_latitude=None,
-        patient_longitude=None,
-        top_n=5
-    )
-
-    columns_to_show = [
-        col for col in [
-            "provider_id",
-            "clinic_name",
-            "provider_name",
-            "specialty",
-            "city",
-            "latitude",
-            "longitude",
-            "distance_miles",
-            "source"
-        ]
-        if col in results.columns
+    test_cities = [
+        "Kansas City",
+        "Springfield",
+        "Columbia",
+        "West Plains"
     ]
 
-    print(results[columns_to_show])
+    for city in test_cities:
+        print(f"\nNearest clinics for {city}:")
+
+        results = find_nearest_clinics(
+            patient_city=city,
+            patient_latitude=None,
+            patient_longitude=None,
+            top_n=5
+        )
+
+        columns_to_show = [
+            col for col in [
+                "provider_id",
+                "clinic_name",
+                "provider_name",
+                "specialty",
+                "city",
+                "latitude",
+                "longitude",
+                "distance_miles",
+                "source"
+            ]
+            if col in results.columns
+        ]
+
+        print(results[columns_to_show])
