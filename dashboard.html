@@ -786,7 +786,8 @@ input:focus,select:focus{
 
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/12.14.0/firebase-app.js";
-import { getFirestore, collection, addDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/12.14.0/firebase-firestore.js";
+import { getAuth, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/12.14.0/firebase-auth.js";
+import { getFirestore, collection, addDoc, serverTimestamp, doc, getDoc } from "https://www.gstatic.com/firebasejs/12.14.0/firebase-firestore.js";
 
 const firebaseConfig = {
     apiKey: "AIzaSyB_O-wKgjdE0pFAvbKUabJBJnnvwBuw3ho",
@@ -797,12 +798,12 @@ const firebaseConfig = {
     messagingSenderId: "466959301708",
     appId: "1:466959301708:web:67853efab3d3da610108e9",
     measurementId: "G-7YE0JPDKK9"
-
 };
 
 const BACKEND_URL = "https://careconnect-ai-production-c747.up.railway.app";
 
 const firebaseApp = initializeApp(firebaseConfig);
+const auth = getAuth(firebaseApp);
 const db = getFirestore(firebaseApp);
 
 const form = document.getElementById("careForm");
@@ -812,54 +813,12 @@ const mapBox = document.getElementById("map");
 const mapNote = document.getElementById("mapNote");
 const conditionInput = document.getElementById("condition");
 const suggestionBox = document.getElementById("suggestionBox");
-const menuToggle = document.getElementById("menuToggle");
-const sidebar = document.getElementById("sidebar");
-const sidebarOverlay = document.getElementById("sidebarOverlay");
-const navLinks = document.querySelectorAll(".nav-link");
+const logoutBtn = document.getElementById("logoutBtn");
 
 let map;
 let markers = [];
-let patientLatitude = null;
-let patientLongitude = null;
 let suggestionTimer;
-
-function openSidebar(){
-    sidebar.classList.add("open");
-    sidebarOverlay.classList.add("show");
-    document.body.classList.add("nav-open");
-}
-
-function closeSidebar(){
-    sidebar.classList.remove("open");
-    sidebarOverlay.classList.remove("show");
-    document.body.classList.remove("nav-open");
-}
-
-menuToggle.addEventListener("click", () => {
-    if(sidebar.classList.contains("open")){
-        closeSidebar();
-    }else{
-        openSidebar();
-    }
-});
-
-sidebarOverlay.addEventListener("click", closeSidebar);
-
-navLinks.forEach(link => {
-    link.addEventListener("click", () => {
-        if(window.innerWidth <= 980){
-            closeSidebar();
-        }
-    });
-});
-
-document.getElementById("welcome").innerText = "Welcome, Guest";
-document.getElementById("userInfo").innerText = "Testing CareConnect AI without login";
-document.getElementById("profileName").innerText = "Guest User";
-document.getElementById("profileEmail").innerText = "Not signed in";
-document.getElementById("profileRole").innerText = "Demo Patient";
-document.getElementById("profileCity").innerText = "Missouri";
-document.getElementById("logoutBtn").style.display = "none";
+let currentUserData = null;
 
 window.initMap = function(){
     map = new google.maps.Map(mapBox, {
@@ -868,15 +827,45 @@ window.initMap = function(){
     });
 };
 
-navigator.geolocation.getCurrentPosition(
-    function(position){
-        patientLatitude = position.coords.latitude;
-        patientLongitude = position.coords.longitude;
-    },
-    function(){
-        console.log("Location denied. Using city-only matching.");
+onAuthStateChanged(auth, async function(user){
+    if(!user){
+        window.location.href = "signup.html";
+        return;
     }
-);
+
+    const userRef = doc(db, "users", user.uid);
+    const userSnap = await getDoc(userRef);
+
+    if(userSnap.exists()){
+        currentUserData = userSnap.data();
+
+        document.getElementById("welcome").innerText =
+            `Welcome, ${currentUserData.fullName}`;
+
+        document.getElementById("userInfo").innerText = user.email;
+        document.getElementById("profileName").innerText =
+            currentUserData.fullName || "CareConnect User";
+        document.getElementById("profileEmail").innerText = user.email;
+        document.getElementById("profileRole").innerText =
+            currentUserData.role || "Patient";
+        document.getElementById("profileCity").innerText =
+            currentUserData.city || "Missouri";
+    }else{
+        document.getElementById("welcome").innerText = "Welcome";
+        document.getElementById("userInfo").innerText = user.email;
+        document.getElementById("profileName").innerText = "CareConnect User";
+        document.getElementById("profileEmail").innerText = user.email;
+        document.getElementById("profileRole").innerText = "Patient";
+        document.getElementById("profileCity").innerText = "Missouri";
+    }
+
+    logoutBtn.style.display = "block";
+});
+
+logoutBtn.addEventListener("click", async function(){
+    await signOut(auth);
+    window.location.href = "signup.html";
+});
 
 conditionInput.addEventListener("input", function(){
     clearTimeout(suggestionTimer);
@@ -1053,39 +1042,17 @@ function buildProviderCards(items, cardClass){
         const city = item.city || "N/A";
         const distance = item.distance_miles || "Unknown";
         const mapsUrl = getMapsUrl(item);
-        const isClinic = cardClass === "clinic-card";
-        const isHospital = cardClass === "hospital-card";
-
-        let badge = "Provider";
-        if(isClinic){
-            badge = "Rural Clinic";
-        }
-        if(isHospital){
-            badge = "Fallback Location";
-        }
-
-        let extraDetails = "";
-
-        if(!isClinic){
-            extraDetails += `<p><b>Specialty:</b> ${item.specialty || "N/A"}</p>`;
-        }
-
-        if(!isClinic && !isHospital){
-            extraDetails += `<p><b>Credential:</b> ${item.credential || "N/A"}</p>`;
-            extraDetails += `<p><b>Accepting New Patients:</b> ${item.accepting_new_patients || "Unknown"}</p>`;
-        }
 
         html += `
             <div class="${cardClass}">
-                <div class="card-topline">
-                    <span class="result-badge">${badge}</span>
-                    <span class="distance-pill">${distance} miles</span>
-                </div>
                 <h4>${itemName}</h4>
-                ${extraDetails}
+                <p><b>Specialty:</b> ${item.specialty || "N/A"}</p>
                 <p><b>City:</b> ${city}</p>
                 <p><b>Phone:</b> ${item.phone || "N/A"}</p>
-                <a class="directions-link" href="${mapsUrl}" target="_blank">Open directions</a>
+                <p><b>Credential:</b> ${item.credential || "N/A"}</p>
+                <p><b>Distance:</b> ${distance} miles</p>
+                <p><b>Accepting New Patients:</b> ${item.accepting_new_patients || "Unknown"}</p>
+                <a href="${mapsUrl}" target="_blank">Open directions</a>
             </div>
         `;
     });
@@ -1111,8 +1078,13 @@ function buildAdvocateCards(advocates){
 }
 
 async function saveSearchToFirebase(searchData){
+    const user = auth.currentUser;
+
     await addDoc(collection(db, "patient_searches"), {
         ...searchData,
+        userId: user ? user.uid : null,
+        userEmail: user ? user.email : null,
+        userName: currentUserData?.fullName || null,
         createdAt: serverTimestamp()
     });
 }
@@ -1144,10 +1116,6 @@ form.addEventListener("submit", async function(event){
         });
 
         const data = await response.json();
-
-        if(!response.ok){
-            throw new Error(data.error || "Backend error");
-        }
 
         const specialty = data.specialty || "No specialty returned";
         const confidence = data.confidence || "N/A";
@@ -1207,7 +1175,7 @@ form.addEventListener("submit", async function(event){
             <br>
 
             <h3>Nearest Rural Clinics</h3>
-            <p class="section-note">Closest rural clinics or health centers based on available latitude and longitude.</p>
+            <p class="section-note">Closest rural clinics or health centers based on the city entered.</p>
             ${clinicHTML || "<p>No nearby rural clinics found.</p>"}
 
             <br>
