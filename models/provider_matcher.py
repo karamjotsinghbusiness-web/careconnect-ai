@@ -3,8 +3,7 @@ from pathlib import Path
 from math import radians, sin, cos, sqrt, atan2
 
 BASE_DIR = Path(__file__).resolve().parent.parent
-DATA_PATH = BASE_DIR / "data" / "missouri_healthcare_linked_dataset_with_rural_clinics.xlsx"
-
+DATA_PATH = BASE_DIR / "data" / "missouri_healthcare_linked_dataset_with_expanded_symptoms.xlsx"
 
 def calculate_distance_miles(lat1, lon1, lat2, lon2):
     radius_miles = 3958.8
