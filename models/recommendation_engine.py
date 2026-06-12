@@ -37,9 +37,7 @@ def fix_value(column, value):
         print(f"Changed '{value}' to closest match: '{match[0]}'")
         return match[0]
 
-    raise ValueError(
-        f"Invalid value for {column}: {value}\nAllowed values: {allowed}"
-    )
+    return None
 
 
 def get_condition_suggestions(user_text, limit=5):
@@ -86,6 +84,10 @@ def predict_specialty(patient):
 
     for col in ["gender", "city", "insurance", "condition"]:
         fixed_value = fix_value(col, patient_copy[col])
+
+        if fixed_value is None:
+            return None
+
         patient_copy[col] = encoders[col].transform([fixed_value])[0]
 
     input_data = pd.DataFrame([patient_copy])
@@ -143,14 +145,6 @@ def recommend(patient):
     patient_latitude = patient.get("latitude")
     patient_longitude = patient.get("longitude")
 
-    providers = find_matching_providers(
-        predicted_specialty=predicted_specialty,
-        patient_city=patient["city"],
-        patient_latitude=patient_latitude,
-        patient_longitude=patient_longitude,
-        top_n=5
-    )
-
     advocates = find_advocates(
         patient_city=patient["city"],
         top_n=5
@@ -163,15 +157,28 @@ def recommend(patient):
         top_n=3
     )
 
+    providers = pd.DataFrame()
     fallback_hospitals = pd.DataFrame()
 
-    if providers.empty:
+    if predicted_specialty is not None:
+        providers = find_matching_providers(
+            predicted_specialty=predicted_specialty,
+            patient_city=patient["city"],
+            patient_latitude=patient_latitude,
+            patient_longitude=patient_longitude,
+            top_n=5
+        )
+
+    if predicted_specialty is None or providers.empty:
         fallback_hospitals = find_nearest_hospitals_or_clinics(
             patient_city=patient["city"],
             patient_latitude=patient_latitude,
             patient_longitude=patient_longitude,
             top_n=5
         )
+
+    if predicted_specialty is None:
+        predicted_specialty = "No exact AI specialty match"
 
     return (
         predicted_specialty,
@@ -188,13 +195,10 @@ if __name__ == "__main__":
         "gender": "Male",
         "city": "Kansas City",
         "insurance": "Medicare",
-        "condition": "Chest Pain",
-        "latitude": 39.0997,
-        "longitude": -94.5786
+        "condition": "Random Unknown Symptom",
+        "latitude": None,
+        "longitude": None
     }
-
-    print("\nSymptom Suggestions:")
-    print(get_condition_suggestions("stomach rash"))
 
     (
         specialty,
@@ -208,72 +212,13 @@ if __name__ == "__main__":
     print(specialty)
 
     print("\nMatching Providers:")
-    if providers.empty:
-        print("No providers found.")
-    else:
-        columns_to_show = [
-            col for col in [
-                "provider_id",
-                "provider_name",
-                "specialty",
-                "city",
-                "phone",
-                "distance_miles"
-            ]
-            if col in providers.columns
-        ]
-
-        print(providers[columns_to_show])
+    print(providers)
 
     print("\nNearest Clinics:")
-    if nearest_clinics.empty:
-        print("No clinics found.")
-    else:
-        columns_to_show = [
-            col for col in [
-                "provider_id",
-                "provider_name",
-                "specialty",
-                "city",
-                "phone",
-                "distance_miles"
-            ]
-            if col in nearest_clinics.columns
-        ]
-
-        print(nearest_clinics[columns_to_show])
+    print(nearest_clinics)
 
     print("\nFallback Hospitals / Clinics:")
-    if fallback_hospitals.empty:
-        print("No fallback hospitals needed or found.")
-    else:
-        columns_to_show = [
-            col for col in [
-                "provider_id",
-                "provider_name",
-                "specialty",
-                "city",
-                "phone",
-                "distance_miles"
-            ]
-            if col in fallback_hospitals.columns
-        ]
-
-        print(fallback_hospitals[columns_to_show])
+    print(fallback_hospitals)
 
     print("\nMatching Advocates:")
-    if advocates.empty:
-        print("No advocates found.")
-    else:
-        columns_to_show = [
-            col for col in [
-                "advocate_id",
-                "advocate_name",
-                "role",
-                "city",
-                "phone"
-            ]
-            if col in advocates.columns
-        ]
-
-        print(advocates[columns_to_show])
+    print(advocates)
