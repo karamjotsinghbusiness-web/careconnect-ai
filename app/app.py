@@ -86,7 +86,10 @@ def detect_emergency(condition):
     }
 
 
-def confidence_score(providers, advocates):
+def confidence_score(providers, advocates, specialty):
+    if specialty == "No exact AI specialty match":
+        return 0
+
     score = 70
 
     if len(providers) > 0:
@@ -113,7 +116,7 @@ def symptom_suggestions():
         return json_response({"status": "ok"})
 
     try:
-        data = request.get_json()
+        data = request.get_json() or {}
         typed_condition = str(data.get("condition", "")).strip()
 
         allowed_conditions = list(encoders["condition"].classes_)
@@ -136,18 +139,16 @@ def symptom_suggestions():
             if item not in suggestions:
                 suggestions.append(item)
 
-        suggestions = suggestions[:5]
-
         return json_response({
             "typed": typed_condition,
-            "suggestions": suggestions
+            "suggestions": suggestions[:5]
         })
 
-    except Exception as error:
+    except Exception:
         return json_response({
-            "error": str(error),
+            "typed": "",
             "suggestions": []
-        }, status=500)
+        })
 
 
 @app.route("/recommend", methods=["POST", "OPTIONS"])
@@ -156,14 +157,14 @@ def get_recommendation():
         return json_response({"status": "ok"})
 
     try:
-        data = request.get_json()
+        data = request.get_json() or {}
 
         patient = {
-            "age": int(data["age"]),
-            "gender": data["gender"],
-            "city": data["city"],
-            "insurance": data["insurance"],
-            "condition": data["condition"],
+            "age": int(data.get("age", 0)),
+            "gender": data.get("gender", ""),
+            "city": data.get("city", ""),
+            "insurance": data.get("insurance", ""),
+            "condition": data.get("condition", ""),
             "latitude": data.get("latitude"),
             "longitude": data.get("longitude")
         }
@@ -177,7 +178,15 @@ def get_recommendation():
         ) = recommend(patient)
 
         emergency = detect_emergency(patient["condition"])
-        confidence = confidence_score(providers, advocates)
+        confidence = confidence_score(providers, advocates, specialty)
+
+        ai_matched = specialty != "No exact AI specialty match"
+
+        message = (
+            "AI matched your condition to a specialty."
+            if ai_matched
+            else "This symptom was not found in the AI model, so nearby rural clinics and fallback care options are shown instead."
+        )
 
         search_history.append({
             "city": patient["city"],
@@ -188,10 +197,14 @@ def get_recommendation():
             "longitude": patient["longitude"],
             "provider_count": len(providers),
             "nearest_clinic_count": len(nearest_clinics),
-            "fallback_hospital_count": len(fallback_hospitals)
+            "fallback_hospital_count": len(fallback_hospitals),
+            "ai_matched": ai_matched
         })
 
         return json_response({
+            "success": True,
+            "ai_matched": ai_matched,
+            "message": message,
             "specialty": specialty,
             "confidence": confidence,
             "emergency": emergency,
@@ -203,8 +216,21 @@ def get_recommendation():
 
     except Exception as error:
         return json_response({
-            "error": str(error)
-        }, status=500)
+            "success": False,
+            "ai_matched": False,
+            "message": "CareConnect AI could not process this request, but the system is still running.",
+            "error": str(error),
+            "specialty": "No exact AI specialty match",
+            "confidence": 0,
+            "emergency": {
+                "is_emergency": False,
+                "message": "No emergency warning detected from the entered condition."
+            },
+            "providers": [],
+            "advocates": [],
+            "nearest_clinics": [],
+            "fallback_hospitals": []
+        }, status=200)
 
 
 @app.route("/analytics", methods=["GET"])
