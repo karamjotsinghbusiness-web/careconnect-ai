@@ -11,6 +11,7 @@ FALLBACK_CITY_COORDINATES = {
     "springfield": (37.2089, -93.2923),
     "fordland": (37.1573, -92.9410),
     "lebanon": (37.6806, -92.6638),
+    "bolivar": (37.6145, -93.4105),
     "st louis": (38.6270, -90.1994),
     "saint louis": (38.6270, -90.1994),
     "kansas city": (39.0997, -94.5786),
@@ -20,7 +21,6 @@ FALLBACK_CITY_COORDINATES = {
     "west plains": (36.7281, -91.8524),
     "rolla": (37.9514, -91.7713),
     "marshfield": (37.3387, -92.9071),
-    "bolivar": (37.6145, -93.4105),
     "ozark": (37.0209, -93.2060),
     "nixa": (37.0434, -93.2944),
     "branson": (36.6437, -93.2185),
@@ -217,41 +217,49 @@ def add_distance(
 
     patient_latitude, patient_longitude = get_city_coordinates(patient_city)
 
-    has_patient_location = has_valid_location(
-        patient_latitude,
-        patient_longitude
-    )
-
-    has_provider_location = (
-        "latitude" in df.columns
-        and "longitude" in df.columns
-    )
-
-    if has_patient_location and has_provider_location:
-        df = df.dropna(subset=["latitude", "longitude"]).copy()
-
-        if df.empty:
-            return df
-
-        df["distance_miles"] = df.apply(
-            lambda row: calculate_distance_miles(
-                patient_latitude,
-                patient_longitude,
-                row["latitude"],
-                row["longitude"]
-            ),
-            axis=1
-        )
-
-        df = df.sort_values(
-            by="distance_miles",
-            ascending=True
-        )
-
-    else:
+    if not has_valid_location(patient_latitude, patient_longitude):
         df["distance_miles"] = "Unknown"
+        return df
 
-    return df
+    if "latitude" not in df.columns:
+        df["latitude"] = None
+
+    if "longitude" not in df.columns:
+        df["longitude"] = None
+
+    def get_row_distance(row):
+        row_lat = row.get("latitude")
+        row_lon = row.get("longitude")
+
+        if not has_valid_location(row_lat, row_lon):
+            row_city = row.get("city", "")
+            row_lat, row_lon = get_city_coordinates(row_city)
+
+        if not has_valid_location(row_lat, row_lon):
+            return "Unknown"
+
+        return calculate_distance_miles(
+            patient_latitude,
+            patient_longitude,
+            row_lat,
+            row_lon
+        )
+
+    df["distance_miles"] = df.apply(get_row_distance, axis=1)
+
+    known = df[
+        df["distance_miles"].astype(str) != "Unknown"
+    ].copy()
+
+    unknown = df[
+        df["distance_miles"].astype(str) == "Unknown"
+    ].copy()
+
+    if not known.empty:
+        known["distance_miles"] = known["distance_miles"].astype(float)
+        known = known.sort_values("distance_miles")
+
+    return pd.concat([known, unknown], ignore_index=True)
 
 
 def filter_by_radius(df, radius_miles=30):
@@ -349,7 +357,14 @@ def get_specialty_search_terms(predicted_specialty):
         "pulmonology": [
             "pulmonology",
             "pulmonary",
-            "respiratory"
+            "respiratory",
+            "pulmonary disease"
+        ],
+        "pulmonary disease": [
+            "pulmonology",
+            "pulmonary",
+            "respiratory",
+            "pulmonary disease"
         ],
         "nephrology": [
             "nephrology",
@@ -554,7 +569,7 @@ if __name__ == "__main__":
         results = find_matching_providers(
             predicted_specialty=specialty,
             patient_city=city,
-            top_n=5,
+            top_n=10,
             radius_miles=30
         )
 
