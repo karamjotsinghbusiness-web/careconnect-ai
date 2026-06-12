@@ -20,17 +20,110 @@ encoders = joblib.load(SAVE_DIR / "encoders.pkl")
 specialty_encoder = joblib.load(SAVE_DIR / "specialty_enocders.pkl")
 
 
+NON_URGENT_CONDITION_TO_SPECIALTY = {
+    "stomach pain": "Family Practice",
+    "abdominal pain": "Family Practice",
+    "belly pain": "Family Practice",
+    "vomiting": "Family Practice",
+    "throwing up": "Family Practice",
+    "nausea": "Family Practice",
+    "diarrhea": "Family Practice",
+    "constipation": "Family Practice",
+    "fever": "Family Practice",
+    "cough": "Family Practice",
+    "sore throat": "Family Practice",
+    "runny nose": "Family Practice",
+    "cold": "Family Practice",
+    "flu": "Family Practice",
+    "headache": "Family Practice",
+    "dizziness": "Family Practice",
+    "tired": "Family Practice",
+    "fatigue": "Family Practice",
+    "ear pain": "Family Practice",
+    "earache": "Family Practice",
+    "sinus pain": "Family Practice",
+    "allergies": "Family Practice",
+    "rash": "Family Practice",
+    "skin rash": "Family Practice",
+    "itching": "Family Practice",
+    "burning urination": "Family Practice",
+    "uti": "Family Practice",
+    "urinary pain": "Family Practice",
+
+    "anxiety": "Mental Health Counselor",
+    "stress": "Mental Health Counselor",
+    "depression": "Mental Health Counselor",
+    "sadness": "Mental Health Counselor",
+    "panic attacks": "Mental Health Counselor",
+    "panic attack": "Mental Health Counselor",
+    "mental health": "Mental Health Counselor",
+
+    "back pain": "Physical Therapist In Private Practice",
+    "lower back pain": "Physical Therapist In Private Practice",
+    "neck pain": "Physical Therapist In Private Practice",
+    "shoulder pain": "Physical Therapist In Private Practice",
+    "knee pain": "Physical Therapist In Private Practice",
+    "ankle pain": "Physical Therapist In Private Practice",
+    "wrist pain": "Physical Therapist In Private Practice",
+    "muscle pain": "Physical Therapist In Private Practice",
+    "joint pain": "Physical Therapist In Private Practice",
+
+    "speech problem": "Qualified Speech Language Pathologist",
+    "speech issues": "Qualified Speech Language Pathologist",
+    "trouble speaking": "Qualified Speech Language Pathologist",
+
+    "kidney pain": "Nephrology",
+    "breathing problem": "Pulmonology",
+    "shortness of breath": "Pulmonology",
+
+    "chest pain": "Cardiovascular Disease (Cardiology)",
+    "heart pain": "Cardiovascular Disease (Cardiology)",
+    "heart problem": "Cardiovascular Disease (Cardiology)"
+}
+
+
+def normalize_text(value):
+    return str(value).lower().strip()
+
+
+def manual_specialty_match(condition):
+    condition = normalize_text(condition)
+
+    if condition in NON_URGENT_CONDITION_TO_SPECIALTY:
+        return NON_URGENT_CONDITION_TO_SPECIALTY[condition]
+
+    keys = list(NON_URGENT_CONDITION_TO_SPECIALTY.keys())
+
+    close = get_close_matches(
+        condition,
+        keys,
+        n=1,
+        cutoff=0.72
+    )
+
+    if close:
+        return NON_URGENT_CONDITION_TO_SPECIALTY[close[0]]
+
+    for key, specialty in NON_URGENT_CONDITION_TO_SPECIALTY.items():
+        if key in condition or condition in key:
+            return specialty
+
+    return None
+
+
 def fix_value(column, value):
     allowed = list(encoders[column].classes_)
+    value_text = str(value).strip()
 
-    if value in allowed:
-        return value
+    for item in allowed:
+        if str(item).lower().strip() == value_text.lower():
+            return item
 
     match = get_close_matches(
-        str(value),
+        value_text,
         allowed,
         n=1,
-        cutoff=0.4
+        cutoff=0.35
     )
 
     if match:
@@ -43,15 +136,27 @@ def fix_value(column, value):
 def get_condition_suggestions(user_text, limit=5):
     allowed_conditions = list(encoders["condition"].classes_)
 
-    user_text = str(user_text).lower().strip()
+    user_text_clean = normalize_text(user_text)
+
+    manual_matches = [
+        condition for condition in NON_URGENT_CONDITION_TO_SPECIALTY.keys()
+        if user_text_clean in condition or condition in user_text_clean
+    ]
 
     direct_matches = [
         condition for condition in allowed_conditions
-        if user_text in str(condition).lower()
+        if user_text_clean in str(condition).lower()
     ]
 
-    close_matches = get_close_matches(
-        user_text,
+    close_manual = get_close_matches(
+        user_text_clean,
+        list(NON_URGENT_CONDITION_TO_SPECIALTY.keys()),
+        n=limit,
+        cutoff=0.25
+    )
+
+    close_model = get_close_matches(
+        user_text_clean,
         allowed_conditions,
         n=limit,
         cutoff=0.2
@@ -59,7 +164,7 @@ def get_condition_suggestions(user_text, limit=5):
 
     suggestions = []
 
-    for item in direct_matches + close_matches:
+    for item in manual_matches + direct_matches + close_manual + close_model:
         if item not in suggestions:
             suggestions.append(item)
 
@@ -67,6 +172,15 @@ def get_condition_suggestions(user_text, limit=5):
 
 
 def predict_specialty(patient):
+    manual_match = manual_specialty_match(patient.get("condition", ""))
+
+    if manual_match is not None:
+        print(
+            f"Using manual symptom mapping: "
+            f"{patient.get('condition')} -> {manual_match}"
+        )
+        return manual_match
+
     patient_copy = patient.copy()
 
     model_columns = [
@@ -114,10 +228,11 @@ def load_advocates():
     return advocates
 
 
-def find_advocates(patient_city, top_n=5):
+def find_advocates(patient_city, condition=None, top_n=5):
     advocates = load_advocates()
 
-    patient_city = str(patient_city).lower().strip()
+    patient_city = normalize_text(patient_city)
+    condition = normalize_text(condition)
 
     if "city" not in advocates.columns:
         return advocates.head(top_n)
@@ -147,6 +262,7 @@ def recommend(patient):
 
     advocates = find_advocates(
         patient_city=patient["city"],
+        condition=patient.get("condition"),
         top_n=5
     )
 
@@ -154,7 +270,7 @@ def recommend(patient):
         patient_city=patient["city"],
         patient_latitude=patient_latitude,
         patient_longitude=patient_longitude,
-        top_n=3
+        top_n=5
     )
 
     providers = pd.DataFrame()
@@ -166,26 +282,34 @@ def recommend(patient):
             patient_city=patient["city"],
             patient_latitude=patient_latitude,
             patient_longitude=patient_longitude,
-            top_n=5
+            top_n=10
         )
 
-    if predicted_specialty is None or providers.empty:
-        fallback_hospitals = find_nearest_hospitals_or_clinics(
-            patient_city=patient["city"],
-            patient_latitude=patient_latitude,
-            patient_longitude=patient_longitude,
-            top_n=5
-        )
+        if "distance_miles" in providers.columns:
+            providers = providers[
+                providers["distance_miles"].astype(str) != "Unknown"
+            ].copy()
+
+            providers = providers[
+                providers["distance_miles"].astype(float) <= 30
+            ].copy()
+
+    fallback_hospitals = find_nearest_hospitals_or_clinics(
+        patient_city=patient["city"],
+        patient_latitude=patient_latitude,
+        patient_longitude=patient_longitude,
+        top_n=5
+    )
 
     if predicted_specialty is None:
         predicted_specialty = "No exact AI specialty match"
 
     return (
         predicted_specialty,
-        providers,
+        providers.head(5),
         advocates,
-        nearest_clinics,
-        fallback_hospitals
+        nearest_clinics.head(5),
+        fallback_hospitals.head(5)
     )
 
 
@@ -193,9 +317,9 @@ if __name__ == "__main__":
     sample_patient = {
         "age": 55,
         "gender": "Male",
-        "city": "Kansas City",
+        "city": "Springfield",
         "insurance": "Medicare",
-        "condition": "Random Unknown Symptom",
+        "condition": "Stomach pain",
         "latitude": None,
         "longitude": None
     }
@@ -211,13 +335,13 @@ if __name__ == "__main__":
     print("\nRecommended Specialty:")
     print(specialty)
 
-    print("\nMatching Providers:")
+    print("\nMatching Providers within 30 miles:")
     print(providers)
 
-    print("\nNearest Clinics:")
+    print("\nNearest Rural Clinics:")
     print(nearest_clinics)
 
-    print("\nFallback Hospitals / Clinics:")
+    print("\nNearest Fallback Hospitals / Clinics:")
     print(fallback_hospitals)
 
     print("\nMatching Advocates:")
