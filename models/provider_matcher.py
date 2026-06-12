@@ -62,8 +62,7 @@ FALLBACK_CITY_COORDINATES = {
     "neosho": (36.8689, -94.3679),
     "lamar": (37.4950, -94.2766),
     "stockton": (37.6989, -93.7963),
-    "hermitage": (37.9414, -93.3169),
-    "camdenton": (38.0081, -92.7446)
+    "hermitage": (37.9414, -93.3169)
 }
 
 
@@ -269,7 +268,10 @@ def filter_by_radius(df, radius_miles=30):
     if known_distance.empty:
         return df
 
-    known_distance["distance_miles"] = known_distance["distance_miles"].astype(float)
+    known_distance["distance_miles"] = (
+        known_distance["distance_miles"]
+        .astype(float)
+    )
 
     nearby = known_distance[
         known_distance["distance_miles"] <= radius_miles
@@ -295,6 +297,80 @@ def create_search_text(providers):
     ).str.lower()
 
     return providers
+
+
+def get_specialty_search_terms(predicted_specialty):
+    specialty = clean_text(predicted_specialty)
+
+    specialty_map = {
+        "family practice": [
+            "family practice",
+            "family medicine",
+            "primary care",
+            "general practice",
+            "internal medicine",
+            "nurse practitioner",
+            "rural health clinic"
+        ],
+        "cardiovascular disease (cardiology)": [
+            "cardiology",
+            "cardiovascular",
+            "heart",
+            "interventional cardiology"
+        ],
+        "mental health counselor": [
+            "mental health counselor",
+            "clinical social worker",
+            "clinical psychologist",
+            "behavioral health",
+            "psychology",
+            "counselor"
+        ],
+        "clinical social worker": [
+            "clinical social worker",
+            "mental health counselor",
+            "clinical psychologist",
+            "behavioral health"
+        ],
+        "physical therapist in private practice": [
+            "physical therapist",
+            "physical therapy",
+            "rehabilitation"
+        ],
+        "occupational therapist in private practice": [
+            "occupational therapist",
+            "occupational therapy"
+        ],
+        "qualified speech language pathologist": [
+            "speech language pathologist",
+            "speech therapy",
+            "speech"
+        ],
+        "pulmonology": [
+            "pulmonology",
+            "pulmonary",
+            "respiratory"
+        ],
+        "nephrology": [
+            "nephrology",
+            "kidney"
+        ],
+        "neurology": [
+            "neurology",
+            "neurologist"
+        ],
+        "infectious disease": [
+            "infectious disease"
+        ],
+        "nurse practitioner": [
+            "nurse practitioner",
+            "family practice",
+            "family medicine",
+            "primary care"
+        ]
+    }
+
+    return specialty_map.get(specialty, [specialty])
 
 
 def clean_rural_clinic_rows(clinics):
@@ -338,7 +414,7 @@ def find_matching_providers(
     if "specialty" not in providers.columns:
         return pd.DataFrame()
 
-    predicted_specialty_clean = clean_text(predicted_specialty)
+    providers = create_search_text(providers)
 
     providers["specialty_clean"] = (
         providers["specialty"]
@@ -347,20 +423,20 @@ def find_matching_providers(
         .str.strip()
     )
 
+    search_terms = get_specialty_search_terms(predicted_specialty)
+
     matches = providers[
-        providers["specialty_clean"].str.contains(
-            predicted_specialty_clean,
-            na=False,
-            regex=False
+        providers["search_text"].apply(
+            lambda value: any(term in value for term in search_terms)
         )
     ].copy()
 
-    if matches.empty and predicted_specialty_clean:
-        first_word = predicted_specialty_clean.split()[0]
+    if matches.empty:
+        predicted_specialty_clean = clean_text(predicted_specialty)
 
         matches = providers[
             providers["specialty_clean"].str.contains(
-                first_word,
+                predicted_specialty_clean,
                 na=False,
                 regex=False
             )
@@ -465,18 +541,18 @@ def find_nearest_hospitals_or_clinics(
 
 
 if __name__ == "__main__":
-    test_cities = [
-        "Springfield",
-        "Lebanon",
-        "Fordland",
-        "Saint Louis",
-        "Kansas City"
+    test_cases = [
+        ("Bolivar", "Family Practice"),
+        ("Springfield", "Family Practice"),
+        ("Lebanon", "Family Practice"),
+        ("Bolivar", "Cardiovascular Disease (Cardiology)")
     ]
 
-    for city in test_cities:
-        print(f"\nNearest rural clinics for {city}:")
+    for city, specialty in test_cases:
+        print(f"\nProviders for {specialty} in/near {city}:")
 
-        results = find_nearest_clinics(
+        results = find_matching_providers(
+            predicted_specialty=specialty,
             patient_city=city,
             top_n=5,
             radius_miles=30
@@ -485,10 +561,10 @@ if __name__ == "__main__":
         columns_to_show = [
             col for col in [
                 "provider_id",
-                "clinic_name",
                 "provider_name",
                 "specialty",
                 "city",
+                "phone",
                 "latitude",
                 "longitude",
                 "distance_miles",
