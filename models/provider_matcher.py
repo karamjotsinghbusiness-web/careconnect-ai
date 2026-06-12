@@ -1,9 +1,71 @@
 import pandas as pd
 from pathlib import Path
 from math import radians, sin, cos, sqrt, atan2
+from difflib import get_close_matches
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 DATA_PATH = BASE_DIR / "data" / "missouri_healthcare_linked_dataset_with_expanded_symptoms.xlsx"
+
+
+FALLBACK_CITY_COORDINATES = {
+    "springfield": (37.2089, -93.2923),
+    "fordland": (37.1573, -92.9410),
+    "lebanon": (37.6806, -92.6638),
+    "st louis": (38.6270, -90.1994),
+    "saint louis": (38.6270, -90.1994),
+    "kansas city": (39.0997, -94.5786),
+    "columbia": (38.9517, -92.3341),
+    "jefferson city": (38.5767, -92.1735),
+    "joplin": (37.0842, -94.5133),
+    "west plains": (36.7281, -91.8524),
+    "rolla": (37.9514, -91.7713),
+    "marshfield": (37.3387, -92.9071),
+    "bolivar": (37.6145, -93.4105),
+    "ozark": (37.0209, -93.2060),
+    "nixa": (37.0434, -93.2944),
+    "branson": (36.6437, -93.2185),
+    "camdenton": (38.0081, -92.7446),
+    "farmington": (37.7809, -90.4218),
+    "poplar bluff": (36.7570, -90.3929),
+    "cape girardeau": (37.3059, -89.5181),
+    "hannibal": (39.7084, -91.3585),
+    "sedalia": (38.7045, -93.2283),
+    "kirksville": (40.1948, -92.5832),
+    "maryville": (40.3461, -94.8725),
+    "warrensburg": (38.7628, -93.7361),
+    "moberly": (39.4184, -92.4382),
+    "mexico": (39.1698, -91.8829),
+    "nevada": (37.8392, -94.3547),
+    "sikeston": (36.8767, -89.5879),
+    "kennett": (36.2362, -90.0556),
+    "ava": (36.9517, -92.6605),
+    "mountain grove": (37.1306, -92.2635),
+    "willow springs": (36.9923, -91.9699),
+    "houston": (37.3262, -91.9557),
+    "cabool": (37.1239, -92.1010),
+    "salem": (37.6456, -91.5357),
+    "waynesville": (37.8287, -92.2007),
+    "buffalo": (37.6439, -93.0924),
+    "el dorado springs": (37.8767, -94.0213),
+    "clinton": (38.3686, -93.7783),
+    "versailles": (38.4314, -92.8410),
+    "osage beach": (38.1503, -92.6179),
+    "lake ozark": (38.1986, -92.6388),
+    "richland": (37.8567, -92.4043),
+    "conway": (37.5020, -92.8210),
+    "monett": (36.9289, -93.9277),
+    "aurora": (36.9709, -93.7179),
+    "republic": (37.1201, -93.4802),
+    "mount vernon": (37.1037, -93.8185),
+    "carthage": (37.1764, -94.3102),
+    "webb city": (37.1464, -94.4630),
+    "neosho": (36.8689, -94.3679),
+    "lamar": (37.4950, -94.2766),
+    "stockton": (37.6989, -93.7963),
+    "hermitage": (37.9414, -93.3169),
+    "camdenton": (38.0081, -92.7446)
+}
+
 
 def calculate_distance_miles(lat1, lon1, lat2, lon2):
     radius_miles = 3958.8
@@ -18,7 +80,11 @@ def calculate_distance_miles(lat1, lon1, lat2, lon2):
     dlat = lat2 - lat1
     dlon = lon2 - lon1
 
-    a = sin(dlat / 2) ** 2 + cos(lat1) * cos(lat2) * sin(dlon / 2) ** 2
+    a = (
+        sin(dlat / 2) ** 2
+        + cos(lat1) * cos(lat2) * sin(dlon / 2) ** 2
+    )
+
     c = 2 * atan2(sqrt(a), sqrt(1 - a))
 
     return round(radius_miles * c, 2)
@@ -37,6 +103,31 @@ def safe_text_column(df, column_name):
     return pd.Series([""] * len(df), index=df.index)
 
 
+def clean_text(value):
+    return str(value).lower().strip()
+
+
+def clean_city(value):
+    city = clean_text(value)
+
+    city = city.replace(".", "")
+    city = city.replace(",", "")
+    city = city.replace(" missouri", "")
+    city = city.replace(" mo", "")
+    city = " ".join(city.split())
+
+    aliases = {
+        "saint louis": "st louis",
+        "st louis city": "st louis",
+        "springfeild": "springfield",
+        "kansascity": "kansas city",
+        "jeff city": "jefferson city",
+        "cape": "cape girardeau"
+    }
+
+    return aliases.get(city, city)
+
+
 def has_valid_location(lat, lon):
     return (
         lat is not None
@@ -50,38 +141,71 @@ def has_valid_location(lat, lon):
 
 def get_city_coordinates(patient_city):
     providers = load_providers()
+    city_input = clean_city(patient_city)
 
     if (
-        "city" not in providers.columns
-        or "latitude" not in providers.columns
-        or "longitude" not in providers.columns
+        "city" in providers.columns
+        and "latitude" in providers.columns
+        and "longitude" in providers.columns
     ):
-        return None, None
+        providers["city_clean"] = providers["city"].apply(clean_city)
 
-    city_input = str(patient_city).lower().strip()
+        city_matches = providers[
+            providers["city_clean"] == city_input
+        ].copy()
 
-    providers["city_clean"] = (
-        providers["city"]
-        .astype(str)
-        .str.lower()
-        .str.strip()
+        city_matches = city_matches.dropna(
+            subset=["latitude", "longitude"]
+        )
+
+        if not city_matches.empty:
+            lat = city_matches["latitude"].astype(float).mean()
+            lon = city_matches["longitude"].astype(float).mean()
+            return lat, lon
+
+        all_cities = (
+            providers["city_clean"]
+            .dropna()
+            .astype(str)
+            .unique()
+            .tolist()
+        )
+
+        close_city = get_close_matches(
+            city_input,
+            all_cities,
+            n=1,
+            cutoff=0.78
+        )
+
+        if close_city:
+            city_matches = providers[
+                providers["city_clean"] == close_city[0]
+            ].copy()
+
+            city_matches = city_matches.dropna(
+                subset=["latitude", "longitude"]
+            )
+
+            if not city_matches.empty:
+                lat = city_matches["latitude"].astype(float).mean()
+                lon = city_matches["longitude"].astype(float).mean()
+                return lat, lon
+
+    if city_input in FALLBACK_CITY_COORDINATES:
+        return FALLBACK_CITY_COORDINATES[city_input]
+
+    close_fallback = get_close_matches(
+        city_input,
+        list(FALLBACK_CITY_COORDINATES.keys()),
+        n=1,
+        cutoff=0.78
     )
 
-    city_matches = providers[
-        providers["city_clean"] == city_input
-    ].copy()
+    if close_fallback:
+        return FALLBACK_CITY_COORDINATES[close_fallback[0]]
 
-    city_matches = city_matches.dropna(
-        subset=["latitude", "longitude"]
-    )
-
-    if city_matches.empty:
-        return None, None
-
-    lat = city_matches["latitude"].astype(float).mean()
-    lon = city_matches["longitude"].astype(float).mean()
-
-    return lat, lon
+    return None, None
 
 
 def add_distance(
@@ -92,7 +216,6 @@ def add_distance(
 ):
     df = df.copy()
 
-    # Force typed city location instead of browser/VPN location
     patient_latitude, patient_longitude = get_city_coordinates(patient_city)
 
     has_patient_location = has_valid_location(
@@ -130,6 +253,32 @@ def add_distance(
         df["distance_miles"] = "Unknown"
 
     return df
+
+
+def filter_by_radius(df, radius_miles=30):
+    if df.empty:
+        return df
+
+    if "distance_miles" not in df.columns:
+        return df
+
+    known_distance = df[
+        df["distance_miles"].astype(str) != "Unknown"
+    ].copy()
+
+    if known_distance.empty:
+        return df
+
+    known_distance["distance_miles"] = known_distance["distance_miles"].astype(float)
+
+    nearby = known_distance[
+        known_distance["distance_miles"] <= radius_miles
+    ].copy()
+
+    if nearby.empty:
+        return known_distance.head(5)
+
+    return nearby
 
 
 def create_search_text(providers):
@@ -181,15 +330,15 @@ def find_matching_providers(
     patient_city,
     patient_latitude=None,
     patient_longitude=None,
-    top_n=5
+    top_n=5,
+    radius_miles=30
 ):
     providers = load_providers()
 
     if "specialty" not in providers.columns:
         return pd.DataFrame()
 
-    predicted_specialty = str(predicted_specialty).lower().strip()
-    patient_city_clean = str(patient_city).lower().strip()
+    predicted_specialty_clean = clean_text(predicted_specialty)
 
     providers["specialty_clean"] = (
         providers["specialty"]
@@ -198,25 +347,16 @@ def find_matching_providers(
         .str.strip()
     )
 
-    providers["city_clean"] = (
-        providers["city"]
-        .astype(str)
-        .str.lower()
-        .str.strip()
-        if "city" in providers.columns
-        else ""
-    )
-
     matches = providers[
         providers["specialty_clean"].str.contains(
-            predicted_specialty,
+            predicted_specialty_clean,
             na=False,
             regex=False
         )
     ].copy()
 
-    if matches.empty and predicted_specialty:
-        first_word = predicted_specialty.split()[0]
+    if matches.empty and predicted_specialty_clean:
+        first_word = predicted_specialty_clean.split()[0]
 
         matches = providers[
             providers["specialty_clean"].str.contains(
@@ -229,16 +369,14 @@ def find_matching_providers(
     if matches.empty:
         return pd.DataFrame()
 
-    city_matches = matches[
-        matches["city_clean"] == patient_city_clean
-    ].copy()
-
-    if not city_matches.empty:
-        matches = city_matches
-
     matches = add_distance(
         matches,
         patient_city=patient_city
+    )
+
+    matches = filter_by_radius(
+        matches,
+        radius_miles=radius_miles
     )
 
     return matches.head(top_n)
@@ -248,7 +386,8 @@ def find_nearest_clinics(
     patient_city,
     patient_latitude=None,
     patient_longitude=None,
-    top_n=3
+    top_n=5,
+    radius_miles=30
 ):
     providers = load_providers()
 
@@ -283,6 +422,11 @@ def find_nearest_clinics(
         patient_city=patient_city
     )
 
+    clinics = filter_by_radius(
+        clinics,
+        radius_miles=radius_miles
+    )
+
     return clinics.head(top_n)
 
 
@@ -290,14 +434,15 @@ def find_nearest_hospitals_or_clinics(
     patient_city,
     patient_latitude=None,
     patient_longitude=None,
-    top_n=5
+    top_n=5,
+    radius_miles=30
 ):
     providers = load_providers()
     providers = create_search_text(providers)
 
     hospitals_or_clinics = providers[
         providers["search_text"].str.contains(
-            "hospital|medical center|health center|rural health clinic|community health",
+            "hospital|medical center|health center|rural health clinic|community health|clinic",
             na=False,
             regex=True
         )
@@ -311,4 +456,45 @@ def find_nearest_hospitals_or_clinics(
         patient_city=patient_city
     )
 
+    hospitals_or_clinics = filter_by_radius(
+        hospitals_or_clinics,
+        radius_miles=radius_miles
+    )
+
     return hospitals_or_clinics.head(top_n)
+
+
+if __name__ == "__main__":
+    test_cities = [
+        "Springfield",
+        "Lebanon",
+        "Fordland",
+        "Saint Louis",
+        "Kansas City"
+    ]
+
+    for city in test_cities:
+        print(f"\nNearest rural clinics for {city}:")
+
+        results = find_nearest_clinics(
+            patient_city=city,
+            top_n=5,
+            radius_miles=30
+        )
+
+        columns_to_show = [
+            col for col in [
+                "provider_id",
+                "clinic_name",
+                "provider_name",
+                "specialty",
+                "city",
+                "latitude",
+                "longitude",
+                "distance_miles",
+                "source"
+            ]
+            if col in results.columns
+        ]
+
+        print(results[columns_to_show])
