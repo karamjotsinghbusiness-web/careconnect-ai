@@ -1,13 +1,18 @@
+
+import sys
+from pathlib import Path
+BASE_DIR = Path(__file__).resolve().parent.parent
+sys.path.append(str(BASE_DIR))
 import pandas as pd
 import joblib
-from pathlib import Path
 from difflib import get_close_matches
-
 from models.provider_matcher import (
     find_matching_providers,
     find_nearest_clinics,
     find_nearest_hospitals_or_clinics
 )
+
+from models.hospital_matcher import find_best_hospitals
 
 
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -37,7 +42,6 @@ NON_URGENT_CONDITION_TO_SPECIALTY = {
     "flu": "Family Practice",
     "headache": "Family Practice",
     "dizziness": "Family Practice",
-    "tired": "Family Practice",
     "fatigue": "Family Practice",
     "ear pain": "Family Practice",
     "earache": "Family Practice",
@@ -78,7 +82,8 @@ NON_URGENT_CONDITION_TO_SPECIALTY = {
 
     "chest pain": "Cardiovascular Disease (Cardiology)",
     "heart pain": "Cardiovascular Disease (Cardiology)",
-    "heart problem": "Cardiovascular Disease (Cardiology)"
+    "heart problem": "Cardiovascular Disease (Cardiology)",
+    "high blood pressure": "Cardiovascular Disease (Cardiology)"
 }
 
 
@@ -205,7 +210,6 @@ def predict_specialty(patient):
         patient_copy[col] = encoders[col].transform([fixed_value])[0]
 
     input_data = pd.DataFrame([patient_copy])
-
     prediction = model.predict(input_data)
 
     specialty = specialty_encoder.inverse_transform(prediction)[0]
@@ -232,7 +236,6 @@ def find_advocates(patient_city, condition=None, top_n=5):
     advocates = load_advocates()
 
     patient_city = normalize_text(patient_city)
-    condition = normalize_text(condition)
 
     if "city" not in advocates.columns:
         return advocates.head(top_n)
@@ -274,7 +277,6 @@ def recommend(patient):
     )
 
     providers = pd.DataFrame()
-    fallback_hospitals = pd.DataFrame()
 
     if predicted_specialty is not None:
         providers = find_matching_providers(
@@ -301,15 +303,23 @@ def recommend(patient):
         top_n=5
     )
 
+    recommended_hospitals = find_best_hospitals(
+        patient_city=patient["city"],
+        condition=patient.get("condition", ""),
+        top_n=5,
+        radius_miles=60
+    )
+
     if predicted_specialty is None:
         predicted_specialty = "No exact AI specialty match"
 
     return (
         predicted_specialty,
         providers.head(5),
-        advocates,
+        advocates.head(5),
         nearest_clinics.head(5),
-        fallback_hospitals.head(5)
+        fallback_hospitals.head(5),
+        recommended_hospitals.head(5)
     )
 
 
@@ -319,7 +329,7 @@ if __name__ == "__main__":
         "gender": "Male",
         "city": "Springfield",
         "insurance": "Medicare",
-        "condition": "Stomach pain",
+        "condition": "Chest Pain",
         "latitude": None,
         "longitude": None
     }
@@ -329,7 +339,8 @@ if __name__ == "__main__":
         providers,
         advocates,
         nearest_clinics,
-        fallback_hospitals
+        fallback_hospitals,
+        recommended_hospitals
     ) = recommend(sample_patient)
 
     print("\nRecommended Specialty:")
@@ -343,6 +354,9 @@ if __name__ == "__main__":
 
     print("\nNearest Fallback Hospitals / Clinics:")
     print(fallback_hospitals)
+
+    print("\nRecommended Hospitals by Condition:")
+    print(recommended_hospitals)
 
     print("\nMatching Advocates:")
     print(advocates)
