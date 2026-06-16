@@ -68,7 +68,6 @@ FALLBACK_CITY_COORDINATES = {
 
 def calculate_distance_miles(lat1, lon1, lat2, lon2):
     radius_miles = 3958.8
-
     lat1, lon1, lat2, lon2 = map(float, [lat1, lon1, lat2, lon2])
 
     lat1 = radians(lat1)
@@ -85,7 +84,6 @@ def calculate_distance_miles(lat1, lon1, lat2, lon2):
     )
 
     c = 2 * atan2(sqrt(a), sqrt(1 - a))
-
     return round(radius_miles * c, 2)
 
 
@@ -108,7 +106,6 @@ def clean_text(value):
 
 def clean_city(value):
     city = clean_text(value)
-
     city = city.replace(".", "")
     city = city.replace(",", "")
     city = city.replace(" missouri", "")
@@ -214,7 +211,6 @@ def add_distance(
     patient_city=None
 ):
     df = df.copy()
-
     patient_latitude, patient_longitude = get_city_coordinates(patient_city)
 
     if not has_valid_location(patient_latitude, patient_longitude):
@@ -296,12 +292,15 @@ def create_search_text(providers):
 
     providers["search_text"] = (
         safe_text_column(providers, "specialty") + " " +
+        safe_text_column(providers, "primary_specialty") + " " +
+        safe_text_column(providers, "secondary_specialty") + " " +
+        safe_text_column(providers, "provider_type") + " " +
         safe_text_column(providers, "source") + " " +
         safe_text_column(providers, "organization") + " " +
         safe_text_column(providers, "provider_name") + " " +
         safe_text_column(providers, "facility_name") + " " +
         safe_text_column(providers, "clinic_name") + " " +
-        safe_text_column(providers, "provider_type")
+        safe_text_column(providers, "credential")
     ).str.lower()
 
     return providers
@@ -317,8 +316,7 @@ def get_specialty_search_terms(predicted_specialty):
             "primary care",
             "general practice",
             "internal medicine",
-            "nurse practitioner",
-            "rural health clinic"
+            "nurse practitioner"
         ],
         "cardiovascular disease (cardiology)": [
             "cardiology",
@@ -431,13 +429,6 @@ def find_matching_providers(
 
     providers = create_search_text(providers)
 
-    providers["specialty_clean"] = (
-        providers["specialty"]
-        .astype(str)
-        .str.lower()
-        .str.strip()
-    )
-
     search_terms = get_specialty_search_terms(predicted_specialty)
 
     matches = providers[
@@ -450,7 +441,7 @@ def find_matching_providers(
         predicted_specialty_clean = clean_text(predicted_specialty)
 
         matches = providers[
-            providers["specialty_clean"].str.contains(
+            providers["search_text"].str.contains(
                 predicted_specialty_clean,
                 na=False,
                 regex=False
@@ -531,16 +522,55 @@ def find_nearest_hospitals_or_clinics(
     providers = load_providers()
     providers = create_search_text(providers)
 
+    include_terms = [
+        "hospital",
+        "medical center",
+        "health center",
+        "rural health clinic",
+        "urgent care",
+        "walk in clinic",
+        "walk-in clinic",
+        "family medical",
+        "family clinic",
+        "community health",
+        "clinic"
+    ]
+
+    exclude_terms = [
+        "clinical social worker",
+        "mental health counselor",
+        "clinical psychologist",
+        "psychologist",
+        "counselor",
+        "physical therapist",
+        "occupational therapist",
+        "speech language pathologist",
+        "speech therapist",
+        "dietitian",
+        "nutrition",
+        "diagnostic radiology",
+        "radiology",
+        "independent practice"
+    ]
+
     hospitals_or_clinics = providers[
-        providers["search_text"].str.contains(
-            "hospital|medical center|health center|rural health clinic|community health|clinic",
-            na=False,
-            regex=True
+        providers["search_text"].apply(
+            lambda value:
+                any(term in value for term in include_terms)
+                and not any(term in value for term in exclude_terms)
         )
     ].copy()
 
     if hospitals_or_clinics.empty:
-        hospitals_or_clinics = providers.copy()
+        hospitals_or_clinics = find_nearest_clinics(
+            patient_city=patient_city,
+            patient_latitude=patient_latitude,
+            patient_longitude=patient_longitude,
+            top_n=top_n,
+            radius_miles=radius_miles
+        )
+
+        return hospitals_or_clinics
 
     hospitals_or_clinics = add_distance(
         hospitals_or_clinics,
@@ -557,10 +587,10 @@ def find_nearest_hospitals_or_clinics(
 
 if __name__ == "__main__":
     test_cases = [
-        ("Bolivar", "Family Practice"),
         ("Springfield", "Family Practice"),
+        ("Bolivar", "Family Practice"),
         ("Lebanon", "Family Practice"),
-        ("Bolivar", "Cardiovascular Disease (Cardiology)")
+        ("Springfield", "Cardiovascular Disease (Cardiology)")
     ]
 
     for city, specialty in test_cases:
@@ -578,10 +608,10 @@ if __name__ == "__main__":
                 "provider_id",
                 "provider_name",
                 "specialty",
+                "primary_specialty",
+                "organization",
                 "city",
                 "phone",
-                "latitude",
-                "longitude",
                 "distance_miles",
                 "source"
             ]
@@ -589,3 +619,29 @@ if __name__ == "__main__":
         ]
 
         print(results[columns_to_show])
+
+    print("\nFallback hospitals/clinics near Springfield:")
+
+    fallback_results = find_nearest_hospitals_or_clinics(
+        patient_city="Bolivar",
+        top_n=10,
+        radius_miles=30
+    )
+
+    fallback_columns = [
+        col for col in [
+            "provider_id",
+            "provider_name",
+            "clinic_name",
+            "specialty",
+            "primary_specialty",
+            "organization",
+            "city",
+            "phone",
+            "distance_miles",
+            "source"
+        ]
+        if col in fallback_results.columns
+    ]
+
+    print(fallback_results[fallback_columns])
