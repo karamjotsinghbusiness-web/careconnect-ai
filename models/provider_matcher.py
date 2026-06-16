@@ -441,13 +441,10 @@ def find_matching_providers(
         predicted_specialty_clean = clean_text(predicted_specialty)
 
         matches = providers[
-            providers["search_text"].str.contains(
-                predicted_specialty_clean,
-                na=False,
-                regex=False
-            )
-        ].copy()
-
+    providers["search_text"].apply(
+        lambda value: any(term in str(value).lower() for term in search_terms)
+    )
+].copy()
     if matches.empty:
         return pd.DataFrame()
 
@@ -554,12 +551,12 @@ def find_nearest_hospitals_or_clinics(
     ]
 
     hospitals_or_clinics = providers[
-        providers["search_text"].apply(
-            lambda value:
-                any(term in value for term in include_terms)
-                and not any(term in value for term in exclude_terms)
-        )
-    ].copy()
+    providers["search_text"].apply(
+        lambda value:
+            any(term in str(value).lower() for term in include_terms)
+            and not any(term in str(value).lower() for term in exclude_terms)
+    )
+].copy()
 
     if hospitals_or_clinics.empty:
         hospitals_or_clinics = find_nearest_clinics(
