@@ -66,8 +66,36 @@ FALLBACK_CITY_COORDINATES = {
 }
 
 
+def clean_text(value):
+    return str(value).lower().strip()
+
+
+def clean_city(value):
+    city = clean_text(value)
+
+    city = city.replace(".", "")
+    city = city.replace(",", "")
+    city = city.replace(" missouri", "")
+    city = city.replace(" mo", "")
+    city = " ".join(city.split())
+
+    aliases = {
+        "saint louis": "st louis",
+        "st louis city": "st louis",
+        "saint joseph": "st joseph",
+        "saint charles": "st charles",
+        "springfeild": "springfield",
+        "kansascity": "kansas city",
+        "jeff city": "jefferson city",
+        "cape": "cape girardeau"
+    }
+
+    return aliases.get(city, city)
+
+
 def calculate_distance_miles(lat1, lon1, lat2, lon2):
     radius_miles = 3958.8
+
     lat1, lon1, lat2, lon2 = map(float, [lat1, lon1, lat2, lon2])
 
     lat1 = radians(lat1)
@@ -84,44 +112,8 @@ def calculate_distance_miles(lat1, lon1, lat2, lon2):
     )
 
     c = 2 * atan2(sqrt(a), sqrt(1 - a))
+
     return round(radius_miles * c, 2)
-
-
-def load_providers():
-    providers = pd.read_excel(DATA_PATH, sheet_name="Providers")
-    providers.columns = providers.columns.str.lower().str.strip()
-    return providers
-
-
-def safe_text_column(df, column_name):
-    if column_name in df.columns:
-        return df[column_name].astype(str)
-
-    return pd.Series([""] * len(df), index=df.index)
-
-
-def clean_text(value):
-    return str(value).lower().strip()
-
-
-def clean_city(value):
-    city = clean_text(value)
-    city = city.replace(".", "")
-    city = city.replace(",", "")
-    city = city.replace(" missouri", "")
-    city = city.replace(" mo", "")
-    city = " ".join(city.split())
-
-    aliases = {
-        "saint louis": "st louis",
-        "st louis city": "st louis",
-        "springfeild": "springfield",
-        "kansascity": "kansas city",
-        "jeff city": "jefferson city",
-        "cape": "cape girardeau"
-    }
-
-    return aliases.get(city, city)
 
 
 def has_valid_location(lat, lon):
@@ -133,6 +125,29 @@ def has_valid_location(lat, lon):
         and str(lat).lower() not in ["none", "null", "nan"]
         and str(lon).lower() not in ["none", "null", "nan"]
     )
+
+
+def load_providers():
+    providers = pd.read_excel(DATA_PATH, sheet_name="Providers")
+
+    providers.columns = (
+        providers.columns
+        .str.lower()
+        .str.strip()
+    )
+
+    return providers
+
+
+def safe_text_column(df, column_name):
+    if column_name in df.columns:
+        return (
+            df[column_name]
+            .fillna("")
+            .astype(str)
+        )
+
+    return pd.Series([""] * len(df), index=df.index)
 
 
 def get_city_coordinates(patient_city):
@@ -157,6 +172,7 @@ def get_city_coordinates(patient_city):
         if not city_matches.empty:
             lat = city_matches["latitude"].astype(float).mean()
             lon = city_matches["longitude"].astype(float).mean()
+
             return lat, lon
 
         all_cities = (
@@ -186,6 +202,7 @@ def get_city_coordinates(patient_city):
             if not city_matches.empty:
                 lat = city_matches["latitude"].astype(float).mean()
                 lon = city_matches["longitude"].astype(float).mean()
+
                 return lat, lon
 
     if city_input in FALLBACK_CITY_COORDINATES:
@@ -211,7 +228,12 @@ def add_distance(
     patient_city=None
 ):
     df = df.copy()
-    patient_latitude, patient_longitude = get_city_coordinates(patient_city)
+
+    if has_valid_location(patient_latitude, patient_longitude):
+        patient_latitude = float(patient_latitude)
+        patient_longitude = float(patient_longitude)
+    else:
+        patient_latitude, patient_longitude = get_city_coordinates(patient_city)
 
     if not has_valid_location(patient_latitude, patient_longitude):
         df["distance_miles"] = "Unknown"
@@ -301,9 +323,32 @@ def create_search_text(providers):
         safe_text_column(providers, "facility_name") + " " +
         safe_text_column(providers, "clinic_name") + " " +
         safe_text_column(providers, "credential")
-    ).str.lower()
+    )
+
+    providers["search_text"] = (
+        providers["search_text"]
+        .fillna("")
+        .astype(str)
+        .str.lower()
+    )
 
     return providers
+
+
+def text_contains_any(value, terms):
+    value = str(value).lower()
+
+    for term in terms:
+        term = str(term).lower().strip()
+
+        if term and term in value:
+            return True
+
+    return False
+
+
+def text_contains_none(value, terms):
+    return not text_contains_any(value, terms)
 
 
 def get_specialty_search_terms(predicted_specialty):
@@ -433,7 +478,7 @@ def find_matching_providers(
 
     matches = providers[
         providers["search_text"].apply(
-            lambda value: any(term in value for term in search_terms)
+            lambda value: text_contains_any(value, search_terms)
         )
     ].copy()
 
@@ -441,15 +486,20 @@ def find_matching_providers(
         predicted_specialty_clean = clean_text(predicted_specialty)
 
         matches = providers[
-    providers["search_text"].apply(
-        lambda value: any(term in str(value).lower() for term in search_terms)
-    )
-].copy()
+            providers["search_text"].str.contains(
+                predicted_specialty_clean,
+                na=False,
+                regex=False
+            )
+        ].copy()
+
     if matches.empty:
         return pd.DataFrame()
 
     matches = add_distance(
         matches,
+        patient_latitude=patient_latitude,
+        patient_longitude=patient_longitude,
         patient_city=patient_city
     )
 
@@ -498,6 +548,8 @@ def find_nearest_clinics(
 
     clinics = add_distance(
         clinics,
+        patient_latitude=patient_latitude,
+        patient_longitude=patient_longitude,
         patient_city=patient_city
     )
 
@@ -551,12 +603,12 @@ def find_nearest_hospitals_or_clinics(
     ]
 
     hospitals_or_clinics = providers[
-    providers["search_text"].apply(
-        lambda value:
-            any(term in str(value).lower() for term in include_terms)
-            and not any(term in str(value).lower() for term in exclude_terms)
-    )
-].copy()
+        providers["search_text"].apply(
+            lambda value:
+                text_contains_any(value, include_terms)
+                and text_contains_none(value, exclude_terms)
+        )
+    ].copy()
 
     if hospitals_or_clinics.empty:
         hospitals_or_clinics = find_nearest_clinics(
@@ -571,6 +623,8 @@ def find_nearest_hospitals_or_clinics(
 
     hospitals_or_clinics = add_distance(
         hospitals_or_clinics,
+        patient_latitude=patient_latitude,
+        patient_longitude=patient_longitude,
         patient_city=patient_city
     )
 
@@ -617,7 +671,7 @@ if __name__ == "__main__":
 
         print(results[columns_to_show])
 
-    print("\nFallback hospitals/clinics near Springfield:")
+    print("\nFallback hospitals/clinics near Bolivar:")
 
     fallback_results = find_nearest_hospitals_or_clinics(
         patient_city="Bolivar",
@@ -642,3 +696,4 @@ if __name__ == "__main__":
     ]
 
     print(fallback_results[fallback_columns])
+
