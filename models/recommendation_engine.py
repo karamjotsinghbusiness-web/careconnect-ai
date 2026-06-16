@@ -1,4 +1,3 @@
-
 import sys
 from pathlib import Path
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -86,6 +85,96 @@ NON_URGENT_CONDITION_TO_SPECIALTY = {
     "high blood pressure": "Cardiovascular Disease (Cardiology)"
 }
 
+SYMPTOM_KEYWORDS_TO_SPECIALTY = [
+    (
+        [
+            "stomach",
+            "abdominal",
+            "abdomen",
+            "belly",
+            "tummy",
+            "vomit",
+            "nausea",
+            "diarrhea",
+            "constipation",
+            "fever",
+            "cough",
+            "throat",
+            "cold",
+            "flu",
+            "headache",
+            "dizzy",
+            "fatigue",
+            "ear",
+            "sinus",
+            "allerg",
+            "rash",
+            "itch",
+            "urination",
+            "uti"
+        ],
+        "Family Practice"
+    ),
+    (
+        [
+            "anxiety",
+            "stress",
+            "depress",
+            "sad",
+            "panic",
+            "mental"
+        ],
+        "Mental Health Counselor"
+    ),
+    (
+        [
+            "back",
+            "neck",
+            "shoulder",
+            "knee",
+            "ankle",
+            "wrist",
+            "muscle",
+            "joint",
+            "hip"
+        ],
+        "Physical Therapist In Private Practice"
+    ),
+    (
+        [
+            "speech",
+            "speaking",
+            "talking"
+        ],
+        "Qualified Speech Language Pathologist"
+    ),
+    (
+        [
+            "kidney"
+        ],
+        "Nephrology"
+    ),
+    (
+        [
+            "breath",
+            "breathing",
+            "shortness",
+            "lung",
+            "respiratory"
+        ],
+        "Pulmonology"
+    ),
+    (
+        [
+            "chest",
+            "heart",
+            "blood pressure",
+            "cardiac"
+        ],
+        "Cardiovascular Disease (Cardiology)"
+    )
+]
+
 
 def normalize_text(value):
     return str(value).lower().strip()
@@ -111,6 +200,10 @@ def manual_specialty_match(condition):
 
     for key, specialty in NON_URGENT_CONDITION_TO_SPECIALTY.items():
         if key in condition or condition in key:
+            return specialty
+
+    for keywords, specialty in SYMPTOM_KEYWORDS_TO_SPECIALTY:
+        if any(keyword in condition for keyword in keywords):
             return specialty
 
     return None
@@ -147,6 +240,11 @@ def get_condition_suggestions(user_text, limit=5):
         condition for condition in NON_URGENT_CONDITION_TO_SPECIALTY.keys()
         if user_text_clean in condition or condition in user_text_clean
     ]
+
+    keyword_specialty = manual_specialty_match(user_text)
+
+    if keyword_specialty is not None:
+        manual_matches.append(keyword_specialty)
 
     direct_matches = [
         condition for condition in allowed_conditions
