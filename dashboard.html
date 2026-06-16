@@ -19,6 +19,7 @@
     --soft:#f0fdfa;
     --danger:#991b1b;
     --warning:#f97316;
+    --purple:#7c3aed;
     --shadow:0 22px 60px rgba(15, 23, 42, 0.10);
     --shadow-soft:0 12px 30px rgba(15, 118, 110, 0.10);
     --radius:24px;
@@ -31,7 +32,9 @@
     font-family:Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif;
 }
 
-html{scroll-behavior:smooth;}
+html{
+    scroll-behavior:smooth;
+}
 
 body{
     min-height:100vh;
@@ -42,9 +45,15 @@ body{
         linear-gradient(135deg, #f8fffe 0%, #eefcf9 40%, #f8fafc 100%);
 }
 
-body.nav-open{overflow:hidden;}
+body.nav-open{
+    overflow:hidden;
+}
 
-button,input,select{font:inherit;}
+button,
+input,
+select{
+    font:inherit;
+}
 
 .mobile-topbar{
     display:none;
@@ -104,8 +113,13 @@ button,input,select{font:inherit;}
     content:"";
 }
 
-.menu-toggle span::before{transform:translateY(-7px);}
-.menu-toggle span::after{transform:translateY(5px);}
+.menu-toggle span::before{
+    transform:translateY(-7px);
+}
+
+.menu-toggle span::after{
+    transform:translateY(5px);
+}
 
 .sidebar-overlay{
     display:none;
@@ -217,8 +231,16 @@ button,input,select{font:inherit;}
     border:1px solid rgba(255,255,255,0.16);
 }
 
-.sidebar-card b{display:block;margin-bottom:6px;}
-.sidebar-card p{font-size:13px;color:rgba(255,255,255,0.74);line-height:1.5;}
+.sidebar-card b{
+    display:block;
+    margin-bottom:6px;
+}
+
+.sidebar-card p{
+    font-size:13px;
+    color:rgba(255,255,255,0.74);
+    line-height:1.5;
+}
 
 .main{
     flex:1;
@@ -373,9 +395,12 @@ button,input,select{font:inherit;}
     gap:14px;
 }
 
-.form-field.full{grid-column:1/-1;}
+.form-field.full{
+    grid-column:1/-1;
+}
 
-input,select{
+input,
+select{
     width:100%;
     padding:15px 15px;
     margin-bottom:0;
@@ -387,7 +412,8 @@ input,select{
     transition:0.18s ease;
 }
 
-input:focus,select:focus{
+input:focus,
+select:focus{
     border-color:var(--primary-2);
     background:#ffffff;
     box-shadow:0 0 0 4px rgba(20,184,166,0.12);
@@ -414,9 +440,13 @@ input:focus,select:focus{
     box-shadow:0 22px 48px rgba(15,118,110,0.34);
 }
 
-.symptom-wrapper{position:relative;}
+.symptom-wrapper{
+    position:relative;
+}
 
-#suggestionBox{margin-top:10px;}
+#suggestionBox{
+    margin-top:10px;
+}
 
 .suggestion-title{
     font-size:13px;
@@ -445,7 +475,9 @@ input:focus,select:focus{
     transform:translateY(-1px);
 }
 
-.suggestion-btn b{color:var(--primary);}
+.suggestion-btn b{
+    color:var(--primary);
+}
 
 .result-box{
     display:none;
@@ -462,7 +494,8 @@ input:focus,select:focus{
 .provider-card,
 .advocate-card,
 .clinic-card,
-.hospital-card{
+.hospital-card,
+.quality-hospital-card{
     background:white;
     padding:18px;
     border-radius:18px;
@@ -475,20 +508,41 @@ input:focus,select:focus{
 .provider-card:hover,
 .advocate-card:hover,
 .clinic-card:hover,
-.hospital-card:hover{
+.hospital-card:hover,
+.quality-hospital-card:hover{
     transform:translateY(-2px);
     box-shadow:0 16px 34px rgba(15,23,42,0.09);
 }
 
-.provider-card{border-left:5px solid var(--primary);}
-.clinic-card{border-left:5px solid var(--primary-2); background:#fbfffe;}
-.advocate-card{border-left:5px solid #06b6d4; background:#f0fdfa;}
-.hospital-card{border-left:5px solid var(--warning); background:#fffaf3;}
+.provider-card{
+    border-left:5px solid var(--primary);
+}
+
+.clinic-card{
+    border-left:5px solid var(--primary-2);
+    background:#fbfffe;
+}
+
+.advocate-card{
+    border-left:5px solid #06b6d4;
+    background:#f0fdfa;
+}
+
+.hospital-card{
+    border-left:5px solid var(--warning);
+    background:#fffaf3;
+}
+
+.quality-hospital-card{
+    border-left:5px solid var(--purple);
+    background:#faf7ff;
+}
 
 .provider-card h4,
 .advocate-card h4,
 .clinic-card h4,
-.hospital-card h4{
+.hospital-card h4,
+.quality-hospital-card h4{
     color:#0f172a;
     margin-bottom:8px;
     font-size:17px;
@@ -498,7 +552,8 @@ input:focus,select:focus{
 .provider-card p,
 .advocate-card p,
 .clinic-card p,
-.hospital-card p{
+.hospital-card p,
+.quality-hospital-card p{
     margin:6px 0;
     color:#475569;
     line-height:1.45;
@@ -506,12 +561,24 @@ input:focus,select:focus{
 
 .provider-card a,
 .clinic-card a,
-.hospital-card a{
+.hospital-card a,
+.quality-hospital-card a{
     display:inline-flex;
     margin-top:10px;
     color:var(--primary);
     font-weight:900;
     text-decoration:none;
+}
+
+.score-pill{
+    display:inline-flex;
+    padding:7px 11px;
+    border-radius:999px;
+    background:#ede9fe;
+    color:#5b21b6;
+    font-size:12px;
+    font-weight:900;
+    margin-bottom:8px;
 }
 
 .section-note{
@@ -530,11 +597,28 @@ input:focus,select:focus{
     border:1px solid transparent;
 }
 
-.emergency-warning{background:#fff1f2;color:#991b1b;border-color:#fecdd3;}
-.safe-warning{background:#ecfdf5;color:#065f46;border-color:#bbf7d0;}
-.ai-box{background:linear-gradient(135deg, #ecfeff, #f0fdfa);color:#0f766e;border-color:#ccfbf1;}
+.emergency-warning{
+    background:#fff1f2;
+    color:#991b1b;
+    border-color:#fecdd3;
+}
 
-.activity{list-style:none;}
+.safe-warning{
+    background:#ecfdf5;
+    color:#065f46;
+    border-color:#bbf7d0;
+}
+
+.ai-box{
+    background:linear-gradient(135deg, #ecfeff, #f0fdfa);
+    color:#0f766e;
+    border-color:#ccfbf1;
+}
+
+.activity{
+    list-style:none;
+}
+
 .activity li{
     padding:14px;
     background:#f8fafc;
@@ -553,8 +637,13 @@ input:focus,select:focus{
     color:#475569;
 }
 
-.profile-row:last-child{border-bottom:none;}
-.profile-row b{color:#0f172a;}
+.profile-row:last-child{
+    border-bottom:none;
+}
+
+.profile-row b{
+    color:#0f172a;
+}
 
 .benefit{
     padding:14px 15px;
@@ -593,14 +682,28 @@ input:focus,select:focus{
 }
 
 @media(max-width:1200px){
-    .cards{grid-template-columns:repeat(2,minmax(0,1fr));}
-    .grid{grid-template-columns:1fr;}
+    .cards{
+        grid-template-columns:repeat(2,minmax(0,1fr));
+    }
+
+    .grid{
+        grid-template-columns:1fr;
+    }
 }
 
 @media(max-width:980px){
-    .mobile-topbar{display:flex;}
-    .dashboard{display:block;}
-    .sidebar-overlay.show{display:block;}
+    .mobile-topbar{
+        display:flex;
+    }
+
+    .dashboard{
+        display:block;
+    }
+
+    .sidebar-overlay.show{
+        display:block;
+    }
+
     .sidebar{
         position:fixed;
         top:0;
@@ -611,23 +714,56 @@ input:focus,select:focus{
         transition:0.25s ease;
         overflow-y:auto;
     }
-    .sidebar.open{transform:translateX(0);}
-    .main{padding:20px;}
-    .hero{padding:24px;}
+
+    .sidebar.open{
+        transform:translateX(0);
+    }
+
+    .main{
+        padding:20px;
+    }
+
+    .hero{
+        padding:24px;
+    }
 }
 
 @media(max-width:680px){
-    .cards{grid-template-columns:1fr;}
-    .form-grid{grid-template-columns:1fr;}
-    .main{padding:16px;}
-    .panel{padding:20px;border-radius:22px;}
-    .hero{padding:22px;border-radius:24px;}
-    .top{align-items:flex-start;}
-    .logout{display:none;}
-    #map{height:340px;}
+    .cards{
+        grid-template-columns:1fr;
+    }
+
+    .form-grid{
+        grid-template-columns:1fr;
+    }
+
+    .main{
+        padding:16px;
+    }
+
+    .panel{
+        padding:20px;
+        border-radius:22px;
+    }
+
+    .hero{
+        padding:22px;
+        border-radius:24px;
+    }
+
+    .top{
+        align-items:flex-start;
+    }
+
+    .logout{
+        display:none;
+    }
+
+    #map{
+        height:340px;
+    }
 }
 </style>
-
 </head>
 
 <body>
@@ -637,7 +773,10 @@ input:focus,select:focus{
         <div class="brand-mark">CC</div>
         <span>CareConnect AI</span>
     </div>
-    <button class="menu-toggle" id="menuToggle" aria-label="Open navigation"><span></span></button>
+
+    <button class="menu-toggle" id="menuToggle" aria-label="Open navigation">
+        <span></span>
+    </button>
 </header>
 
 <div class="sidebar-overlay" id="sidebarOverlay"></div>
@@ -647,6 +786,7 @@ input:focus,select:focus{
     <aside class="sidebar" id="sidebar">
         <div class="sidebar-header">
             <div class="sidebar-logo">CC</div>
+
             <div class="sidebar-title">
                 <h2>CareConnect AI</h2>
                 <p>Missouri healthcare navigation</p>
@@ -654,26 +794,51 @@ input:focus,select:focus{
         </div>
 
         <div class="nav-section-label">Navigation</div>
-        <a class="nav-link" href="index.html"><span class="nav-icon">⌂</span>Home</a>
-        <a class="nav-link active" href="#"><span class="nav-icon">▦</span>Dashboard</a>
-        <a class="nav-link" href="#"><span class="nav-icon">＋</span>Find Providers</a>
-        <a class="nav-link" href="#"><span class="nav-icon">◌</span>Advocates</a>
-        <a class="nav-link" href="#"><span class="nav-icon">↗</span>Referrals</a>
-        <a class="nav-link" href="#"><span class="nav-icon">◐</span>Profile</a>
+
+        <a class="nav-link" href="index.html">
+            <span class="nav-icon">⌂</span>
+            Home
+        </a>
+
+        <a class="nav-link active" href="dashboard.html">
+            <span class="nav-icon">▦</span>
+            Dashboard
+        </a>
+
+        <a class="nav-link" href="providers.html">
+            <span class="nav-icon">＋</span>
+            Find Providers
+        </a>
+
+        <a class="nav-link" href="advocates.html">
+            <span class="nav-icon">◌</span>
+            Advocates
+        </a>
+
+        <a class="nav-link" href="referrals.html">
+            <span class="nav-icon">↗</span>
+            Referrals
+        </a>
+
+        <a class="nav-link" href="#profilePanel">
+            <span class="nav-icon">◐</span>
+            Profile
+        </a>
 
         <div class="sidebar-card">
             <b>AI System Online</b>
-            <p>Matches symptoms with providers, rural clinics, advocates, and fallback care options.</p>
+            <p>Matches symptoms with providers, rural clinics, advocates, fallback care, and hospital quality data.</p>
         </div>
     </aside>
 
     <main class="main">
+
         <section class="hero">
             <div class="top">
                 <div>
                     <span class="eyebrow">● Live Care Matching</span>
                     <h1 id="welcome">Welcome</h1>
-                    <p id="userInfo">AI-powered healthcare navigation for Missouri patients, including rural clinic support and fallback care routing.</p>
+                    <p id="userInfo">AI-powered healthcare navigation for Missouri patients, including rural clinic support, fallback care routing, and hospital quality matching.</p>
                 </div>
 
                 <button class="logout" id="logoutBtn">Logout</button>
@@ -693,22 +858,25 @@ input:focus,select:focus{
 
             <div class="card">
                 <h3>Rural Clinic Support</h3>
-                <p>Shows nearby clinics when location data is available.</p>
+                <p>Shows nearby clinics based on the city entered.</p>
             </div>
 
             <div class="card">
-                <h3>Fallback Safety</h3>
-                <p>Shows hospitals or clinics when no specialist is found.</p>
+                <h3>Hospital Quality</h3>
+                <p>Ranks nearby hospitals using condition-based CMS quality data.</p>
             </div>
         </section>
 
         <div class="grid">
+
             <section>
+
                 <div class="panel">
                     <h2>Find Healthcare Support</h2>
 
                     <form id="careForm">
                         <div class="form-grid">
+
                             <div class="form-field">
                                 <input type="number" id="age" placeholder="Age" required>
                             </div>
@@ -741,9 +909,12 @@ input:focus,select:focus{
                                 <input type="text" id="condition" placeholder="Condition or symptom" required>
                                 <div id="suggestionBox"></div>
                             </div>
+
                         </div>
 
-                        <button class="submit-btn" type="submit">Run AI Recommendation</button>
+                        <button class="submit-btn" type="submit">
+                            Run AI Recommendation
+                        </button>
                     </form>
 
                     <div class="result-box" id="resultBox"></div>
@@ -756,38 +927,73 @@ input:focus,select:focus{
                     <h2>How CareConnect AI Helps</h2>
 
                     <div class="benefit">Finds providers faster using symptom-based specialty prediction</div>
-                    <div class="benefit">Shows nearest rural clinics using latitude and longitude</div>
+                    <div class="benefit">Shows nearest rural clinics using city-based latitude and longitude</div>
                     <div class="benefit">Displays fallback hospitals or clinics when no specialist appears</div>
+                    <div class="benefit">Ranks nearby hospitals using condition-based quality measures</div>
                     <div class="benefit">Connects patients with healthcare advocates for extra support</div>
                     <div class="benefit">Helps reduce confusion for patients in underserved communities</div>
                 </div>
+
             </section>
 
             <aside>
-                <div class="panel">
+
+                <div class="panel" id="profilePanel">
                     <h2>Your Profile</h2>
-                    <div class="profile-row"><b>Name</b><span id="profileName">Loading...</span></div>
-                    <div class="profile-row"><b>Email</b><span id="profileEmail">Loading...</span></div>
-                    <div class="profile-row"><b>Role</b><span id="profileRole">Loading...</span></div>
-                    <div class="profile-row"><b>City</b><span id="profileCity">Loading...</span></div>
+
+                    <div class="profile-row">
+                        <b>Name</b>
+                        <span id="profileName">Loading...</span>
+                    </div>
+
+                    <div class="profile-row">
+                        <b>Email</b>
+                        <span id="profileEmail">Loading...</span>
+                    </div>
+
+                    <div class="profile-row">
+                        <b>Role</b>
+                        <span id="profileRole">Loading...</span>
+                    </div>
+
+                    <div class="profile-row">
+                        <b>City</b>
+                        <span id="profileCity">Loading...</span>
+                    </div>
                 </div>
 
                 <div class="panel">
                     <h2>Recent Activity</h2>
+
                     <ul class="activity" id="activityList">
                         <li>Dashboard opened</li>
                         <li>AI system ready</li>
                     </ul>
                 </div>
+
             </aside>
+
         </div>
+
     </main>
+
 </div>
 
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/12.14.0/firebase-app.js";
-import { getAuth, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/12.14.0/firebase-auth.js";
-import { getFirestore, collection, addDoc, serverTimestamp, doc, getDoc } from "https://www.gstatic.com/firebasejs/12.14.0/firebase-firestore.js";
+import {
+    getAuth,
+    onAuthStateChanged,
+    signOut
+} from "https://www.gstatic.com/firebasejs/12.14.0/firebase-auth.js";
+import {
+    getFirestore,
+    collection,
+    addDoc,
+    serverTimestamp,
+    doc,
+    getDoc
+} from "https://www.gstatic.com/firebasejs/12.14.0/firebase-firestore.js";
 
 const firebaseConfig = {
     apiKey: "AIzaSyB_O-wKgjdE0pFAvbKUabJBJnnvwBuw3ho",
@@ -814,16 +1020,41 @@ const mapNote = document.getElementById("mapNote");
 const conditionInput = document.getElementById("condition");
 const suggestionBox = document.getElementById("suggestionBox");
 const logoutBtn = document.getElementById("logoutBtn");
+const menuToggle = document.getElementById("menuToggle");
+const sidebar = document.getElementById("sidebar");
+const sidebarOverlay = document.getElementById("sidebarOverlay");
 
 let map;
 let markers = [];
 let suggestionTimer;
 let currentUserData = null;
 
+function openSidebar(){
+    sidebar.classList.add("open");
+    sidebarOverlay.classList.add("show");
+    document.body.classList.add("nav-open");
+}
+
+function closeSidebar(){
+    sidebar.classList.remove("open");
+    sidebarOverlay.classList.remove("show");
+    document.body.classList.remove("nav-open");
+}
+
+menuToggle.addEventListener("click", openSidebar);
+sidebarOverlay.addEventListener("click", closeSidebar);
+
+document.querySelectorAll(".nav-link").forEach(link => {
+    link.addEventListener("click", closeSidebar);
+});
+
 window.initMap = function(){
     map = new google.maps.Map(mapBox, {
         zoom: 7,
-        center: { lat: 38.5767, lng: -92.1735 }
+        center: {
+            lat: 38.5767,
+            lng: -92.1735
+        }
     });
 };
 
@@ -840,14 +1071,19 @@ onAuthStateChanged(auth, async function(user){
         currentUserData = userSnap.data();
 
         document.getElementById("welcome").innerText =
-            `Welcome, ${currentUserData.fullName}`;
+            `Welcome, ${currentUserData.fullName || "CareConnect User"}`;
 
         document.getElementById("userInfo").innerText = user.email;
+
         document.getElementById("profileName").innerText =
             currentUserData.fullName || "CareConnect User";
-        document.getElementById("profileEmail").innerText = user.email;
+
+        document.getElementById("profileEmail").innerText =
+            user.email;
+
         document.getElementById("profileRole").innerText =
             currentUserData.role || "Patient";
+
         document.getElementById("profileCity").innerText =
             currentUserData.city || "Missouri";
     }else{
@@ -886,8 +1122,12 @@ async function getSymptomSuggestions(){
     try{
         const response = await fetch(`${BACKEND_URL}/symptom_suggestions`, {
             method:"POST",
-            headers:{ "Content-Type":"application/json" },
-            body:JSON.stringify({ condition:text })
+            headers:{
+                "Content-Type":"application/json"
+            },
+            body:JSON.stringify({
+                condition:text
+            })
         });
 
         const data = await response.json();
@@ -897,7 +1137,7 @@ async function getSymptomSuggestions(){
         if(!data.suggestions || data.suggestions.length === 0){
             suggestionBox.innerHTML = `
                 <div class="suggestion-title">
-                    No close matches found. Try a simpler phrase.
+                    No close matches found. You can still search; CareConnect AI will show clinics and fallback options.
                 </div>
             `;
             return;
@@ -934,49 +1174,92 @@ function clearMarkers(){
     markers = [];
 }
 
+function cleanValue(value, fallback="N/A"){
+    if(value === null || value === undefined || value === "" || value === "nan"){
+        return fallback;
+    }
+
+    return value;
+}
+
 function getName(item){
     return (
         item.provider_name ||
         item.clinic_name ||
         item.facility_name ||
+        item.facility_name_clean ||
         item.organization ||
         item.name ||
         "Unknown"
     );
 }
 
+function getCity(item){
+    return (
+        item.city ||
+        item.city_town ||
+        item.town ||
+        "N/A"
+    );
+}
+
+function getPhone(item){
+    return (
+        item.phone ||
+        item.telephone_number ||
+        "N/A"
+    );
+}
+
+function getAddress(item){
+    return (
+        item.address ||
+        item.location ||
+        ""
+    );
+}
+
 function getMapsUrl(item){
     const itemName = getName(item);
-    const city = item.city || "";
-    return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(itemName + " " + city + " Missouri")}`;
+    const address = getAddress(item);
+    const city = getCity(item);
+
+    const query = `${itemName} ${address} ${city} Missouri`;
+
+    return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(query)}`;
 }
 
 function addMarker(item, label){
-    if(!map) return;
-    if(!item.latitude || !item.longitude) return;
+    if(!map){
+        return null;
+    }
+
+    if(!item.latitude || !item.longitude){
+        return null;
+    }
 
     const location = {
-        lat: Number(item.latitude),
-        lng: Number(item.longitude)
+        lat:Number(item.latitude),
+        lng:Number(item.longitude)
     };
 
     const itemName = getName(item);
-    const city = item.city || "N/A";
+    const city = getCity(item);
 
     const marker = new google.maps.Marker({
-        position: location,
-        map: map,
-        title: itemName,
-        label: label
+        position:location,
+        map:map,
+        title:itemName,
+        label:label
     });
 
     const infoWindow = new google.maps.InfoWindow({
-        content: `
+        content:`
             <div style="font-family:Arial;max-width:230px;">
                 <h3 style="color:#0f766e;">${itemName}</h3>
                 <p><b>City:</b> ${city}</p>
-                <p><b>Specialty:</b> ${item.specialty || "N/A"}</p>
-                <p><b>Phone:</b> ${item.phone || "N/A"}</p>
+                <p><b>Specialty:</b> ${item.specialty || item.primary_specialty || "N/A"}</p>
+                <p><b>Phone:</b> ${getPhone(item)}</p>
                 <p><b>Distance:</b> ${item.distance_miles || "Unknown"} miles</p>
                 <a href="${getMapsUrl(item)}" target="_blank">Open in Google Maps</a>
             </div>
@@ -992,8 +1275,14 @@ function addMarker(item, label){
     return location;
 }
 
-function displayLocationsOnMap(providers, nearestClinics, fallbackHospitals){
-    if(!map) return;
+function displayLocationsOnMap(
+    providers,
+    nearestClinics,
+    fallbackHospitals
+){
+    if(!map){
+        return;
+    }
 
     clearMarkers();
 
@@ -1002,6 +1291,7 @@ function displayLocationsOnMap(providers, nearestClinics, fallbackHospitals){
 
     providers.forEach(item => {
         const location = addMarker(item, "P");
+
         if(location){
             bounds.extend(location);
             foundLocations++;
@@ -1010,6 +1300,7 @@ function displayLocationsOnMap(providers, nearestClinics, fallbackHospitals){
 
     nearestClinics.forEach(item => {
         const location = addMarker(item, "C");
+
         if(location){
             bounds.extend(location);
             foundLocations++;
@@ -1018,6 +1309,7 @@ function displayLocationsOnMap(providers, nearestClinics, fallbackHospitals){
 
     fallbackHospitals.forEach(item => {
         const location = addMarker(item, "H");
+
         if(location){
             bounds.extend(location);
             foundLocations++;
@@ -1026,11 +1318,13 @@ function displayLocationsOnMap(providers, nearestClinics, fallbackHospitals){
 
     if(foundLocations > 0){
         mapBox.style.display = "block";
-        mapNote.innerText = "Map shows providers, rural clinics, and fallback hospital/clinic options with available coordinates.";
+        mapNote.innerText =
+            "Map shows providers, rural clinics, and fallback hospital/clinic options with available coordinates.";
         map.fitBounds(bounds);
     }else{
         mapBox.style.display = "none";
-        mapNote.innerText = "No coordinates found for the returned locations.";
+        mapNote.innerText =
+            "No coordinates found for the returned locations.";
     }
 }
 
@@ -1039,16 +1333,16 @@ function buildProviderCards(items, cardClass){
 
     items.forEach(item => {
         const itemName = getName(item);
-        const city = item.city || "N/A";
+        const city = getCity(item);
         const distance = item.distance_miles || "Unknown";
         const mapsUrl = getMapsUrl(item);
 
         html += `
             <div class="${cardClass}">
                 <h4>${itemName}</h4>
-                <p><b>Specialty:</b> ${item.specialty || "N/A"}</p>
+                <p><b>Specialty:</b> ${item.specialty || item.primary_specialty || "N/A"}</p>
                 <p><b>City:</b> ${city}</p>
-                <p><b>Phone:</b> ${item.phone || "N/A"}</p>
+                <p><b>Phone:</b> ${getPhone(item)}</p>
                 <p><b>Credential:</b> ${item.credential || "N/A"}</p>
                 <p><b>Distance:</b> ${distance} miles</p>
                 <p><b>Accepting New Patients:</b> ${item.accepting_new_patients || "Unknown"}</p>
@@ -1077,15 +1371,49 @@ function buildAdvocateCards(advocates){
     return html;
 }
 
+function buildRecommendedHospitalCards(hospitals){
+    let html = "";
+
+    hospitals.forEach(hospital => {
+        const name = hospital.facility_name || "Unknown Hospital";
+        const city = hospital.city_town || "N/A";
+        const phone = hospital.telephone_number || "N/A";
+        const distance = hospital.distance_miles || "Unknown";
+        const measureId = hospital.measure_id || "N/A";
+        const measureName = hospital.measure_name || "N/A";
+        const compared = hospital.compared_to_national || "N/A";
+        const score = hospital.score || "N/A";
+        const careScore = hospital.careconnect_score || "N/A";
+        const mapsUrl = getMapsUrl(hospital);
+
+        html += `
+            <div class="quality-hospital-card">
+                <span class="score-pill">CareConnect Score: ${careScore}</span>
+                <h4>${name}</h4>
+                <p><b>City:</b> ${city}</p>
+                <p><b>Phone:</b> ${phone}</p>
+                <p><b>Distance:</b> ${distance} miles</p>
+                <p><b>Quality Measure:</b> ${measureId}</p>
+                <p><b>Measure Name:</b> ${measureName}</p>
+                <p><b>Compared to National:</b> ${compared}</p>
+                <p><b>Score:</b> ${score}</p>
+                <a href="${mapsUrl}" target="_blank">Open directions</a>
+            </div>
+        `;
+    });
+
+    return html;
+}
+
 async function saveSearchToFirebase(searchData){
     const user = auth.currentUser;
 
     await addDoc(collection(db, "patient_searches"), {
         ...searchData,
-        userId: user ? user.uid : null,
-        userEmail: user ? user.email : null,
-        userName: currentUserData?.fullName || null,
-        createdAt: serverTimestamp()
+        userId:user ? user.uid : null,
+        userEmail:user ? user.email : null,
+        userName:currentUserData?.fullName || null,
+        createdAt:serverTimestamp()
     });
 }
 
@@ -1099,62 +1427,97 @@ form.addEventListener("submit", async function(event){
     mapNote.innerText = "";
 
     const patientData = {
-        age: document.getElementById("age").value,
-        gender: document.getElementById("gender").value,
-        city: document.getElementById("city").value,
-        insurance: document.getElementById("insurance").value,
-        condition: conditionInput.value,
-        latitude: null,
-        longitude: null
+        age:document.getElementById("age").value,
+        gender:document.getElementById("gender").value,
+        city:document.getElementById("city").value,
+        insurance:document.getElementById("insurance").value,
+        condition:conditionInput.value,
+        latitude:null,
+        longitude:null
     };
 
     try{
         const response = await fetch(`${BACKEND_URL}/recommend`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(patientData)
+            method:"POST",
+            headers:{
+                "Content-Type":"application/json"
+            },
+            body:JSON.stringify(patientData)
         });
 
         const data = await response.json();
 
         const specialty = data.specialty || "No specialty returned";
-        const confidence = data.confidence || "N/A";
+        const confidence = data.confidence ?? "N/A";
         const emergency = data.emergency || {};
+        const message = data.message || "";
 
         const providers = Array.isArray(data.providers) ? data.providers : [];
         const advocates = Array.isArray(data.advocates) ? data.advocates : [];
         const nearestClinics = Array.isArray(data.nearest_clinics) ? data.nearest_clinics : [];
         const fallbackHospitals = Array.isArray(data.fallback_hospitals) ? data.fallback_hospitals : [];
+        const recommendedHospitals = Array.isArray(data.recommended_hospitals) ? data.recommended_hospitals : [];
 
-        specialtyCard.innerText = `${specialty} (${confidence}% confidence)`;
+        specialtyCard.innerText =
+            `${specialty} (${confidence}% confidence)`;
 
         await saveSearchToFirebase({
-            age: patientData.age,
-            gender: patientData.gender,
-            city: patientData.city,
-            insurance: patientData.insurance,
-            condition: patientData.condition,
-            recommendedSpecialty: specialty,
-            confidence: confidence,
-            emergencyDetected: emergency.is_emergency || false,
-            providerCount: providers.length,
-            nearestClinicCount: nearestClinics.length,
-            fallbackHospitalCount: fallbackHospitals.length,
-            advocateCount: advocates.length,
-            topProvider: providers[0]?.provider_name || null,
-            topClinic: getName(nearestClinics[0] || {}),
-            topHospital: getName(fallbackHospitals[0] || {}),
-            topAdvocate: advocates[0]?.advocate_name || advocates[0]?.provider_name || null
+            age:patientData.age,
+            gender:patientData.gender,
+            city:patientData.city,
+            insurance:patientData.insurance,
+            condition:patientData.condition,
+            recommendedSpecialty:specialty,
+            confidence:confidence,
+            emergencyDetected:emergency.is_emergency || false,
+            providerCount:providers.length,
+            nearestClinicCount:nearestClinics.length,
+            fallbackHospitalCount:fallbackHospitals.length,
+            recommendedHospitalCount:recommendedHospitals.length,
+            advocateCount:advocates.length,
+            topProvider:providers[0]?.provider_name || null,
+            topClinic:getName(nearestClinics[0] || {}),
+            topFallback:getName(fallbackHospitals[0] || {}),
+            topRecommendedHospital:recommendedHospitals[0]?.facility_name || null,
+            topAdvocate:advocates[0]?.advocate_name || advocates[0]?.provider_name || null
         });
 
-        let emergencyHTML = emergency.is_emergency
-            ? `<div class="emergency-warning"><h3>Urgent Warning</h3><p>${emergency.message}</p></div>`
-            : `<div class="safe-warning"><h3>Emergency Check</h3><p>${emergency.message || "No emergency warning detected."}</p></div>`;
+        const emergencyHTML = emergency.is_emergency
+            ? `
+                <div class="emergency-warning">
+                    <h3>Urgent Warning</h3>
+                    <p>${emergency.message}</p>
+                </div>
+            `
+            : `
+                <div class="safe-warning">
+                    <h3>Emergency Check</h3>
+                    <p>${emergency.message || "No emergency warning detected."}</p>
+                </div>
+            `;
 
-        const providerHTML = buildProviderCards(providers, "provider-card");
-        const clinicHTML = buildProviderCards(nearestClinics, "clinic-card");
-        const hospitalHTML = buildProviderCards(fallbackHospitals, "hospital-card");
-        const advocateHTML = buildAdvocateCards(advocates);
+        const providerHTML = buildProviderCards(
+            providers,
+            "provider-card"
+        );
+
+        const clinicHTML = buildProviderCards(
+            nearestClinics,
+            "clinic-card"
+        );
+
+        const fallbackHTML = buildProviderCards(
+            fallbackHospitals,
+            "hospital-card"
+        );
+
+        const recommendedHospitalHTML = buildRecommendedHospitalCards(
+            recommendedHospitals
+        );
+
+        const advocateHTML = buildAdvocateCards(
+            advocates
+        );
 
         resultBox.innerHTML = `
             ${emergencyHTML}
@@ -1165,28 +1528,46 @@ form.addEventListener("submit", async function(event){
                 <p><b>Confidence Score:</b> ${confidence}%</p>
                 <p><b>Patient City:</b> ${patientData.city}</p>
                 <p><b>Insurance:</b> ${patientData.insurance}</p>
+                <p><b>System Message:</b> ${message || "CareConnect AI completed the match."}</p>
                 <p><b>Saved:</b> Search saved to Firebase.</p>
             </div>
 
             <h3>Closest Matching Providers</h3>
-            <p class="section-note">Specialty providers matched by the AI prediction.</p>
+            <p class="section-note">
+                Specialty providers matched by the AI prediction.
+            </p>
             ${providerHTML || "<p>No exact specialty providers found.</p>"}
 
             <br>
 
             <h3>Nearest Rural Clinics</h3>
-            <p class="section-note">Closest rural clinics or health centers based on the city entered.</p>
+            <p class="section-note">
+                Closest rural clinics or health centers based on the city entered.
+            </p>
             ${clinicHTML || "<p>No nearby rural clinics found.</p>"}
 
             <br>
 
-            <h3>Fallback Hospitals / Clinics</h3>
-            <p class="section-note">Shown when no exact specialty provider is found.</p>
-            ${hospitalHTML || "<p>Fallback hospitals are not needed because providers were found.</p>"}
+            <h3>Recommended Hospitals by Condition</h3>
+            <p class="section-note">
+                Nearby hospitals ranked using condition-based quality measures and distance.
+            </p>
+            ${recommendedHospitalHTML || "<p>No hospital quality matches found.</p>"}
 
             <br>
 
-            <h3>Matching Advocates</h3>
+            <h3>Fallback Hospitals / Clinics</h3>
+            <p class="section-note">
+                Backup care options shown when exact specialty providers are limited.
+            </p>
+            ${fallbackHTML || "<p>No fallback hospitals or clinics found.</p>"}
+
+            <br>
+
+            <h3>Care Support Specialists</h3>
+            <p class="section-note">
+                Professionals who can help with care coordination, resources, and support.
+            </p>
             ${advocateHTML || "<p>No advocates found.</p>"}
         `;
 
@@ -1215,7 +1596,9 @@ async function loadAnalytics(){
 
         const activityList = document.getElementById("activityList");
 
-        let recentHTML = `<li>Total Searches: ${data.total_searches}</li>`;
+        let recentHTML = `
+            <li>Total Searches: ${data.total_searches}</li>
+        `;
 
         data.recent_searches.forEach(search => {
             recentHTML += `
@@ -1229,6 +1612,8 @@ async function loadAnalytics(){
         console.log("Analytics not loaded:", error);
     }
 }
+
+loadAnalytics();
 </script>
 
 <script async defer
