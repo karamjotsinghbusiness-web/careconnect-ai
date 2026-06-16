@@ -1006,7 +1006,10 @@ const firebaseConfig = {
     measurementId: "G-7YE0JPDKK9"
 };
 
-const BACKEND_URL = "https://careconnect-ai-production-c747.up.railway.app";
+const BACKEND_URL =
+    (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1")
+        ? "http://127.0.0.1:5000"
+        : "https://careconnect-ai-production-c747.up.railway.app";
 
 const firebaseApp = initializeApp(firebaseConfig);
 const auth = getAuth(firebaseApp);
@@ -1446,9 +1449,22 @@ form.addEventListener("submit", async function(event){
         });
 
         const data = await response.json();
+        console.log("CareConnect backend response:", data);
+
+        if(data.success === false){
+            resultBox.innerHTML = `
+                <div class="emergency-warning">
+                    <h3>Backend returned an error</h3>
+                    <p>${data.message || "CareConnect AI could not process this request."}</p>
+                    <p><b>Error:</b> ${data.error || "No error message returned."}</p>
+                    <p class="section-note">This usually means Railway is still running old backend code, app.py is not updated, or the updated dataset/model files were not deployed.</p>
+                </div>
+            `;
+            return;
+        }
 
         const specialty = data.specialty || "No specialty returned";
-        const confidence = data.confidence ?? "N/A";
+        const confidence = data.confidence ?? 0;
         const emergency = data.emergency || {};
         const message = data.message || "";
 
