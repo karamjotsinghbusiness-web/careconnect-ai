@@ -3,7 +3,6 @@ from pathlib import Path
 import math
 import json
 import random
-from difflib import get_close_matches
 
 import pandas as pd
 import numpy as np
@@ -13,7 +12,7 @@ sys.path.append(str(BASE_DIR))
 
 from flask import Flask, request, Response
 from flask_cors import CORS
-from models.recommendation_engine import recommend, encoders
+from models.recommendation_engine import recommend, get_condition_suggestions
 
 app = Flask(__name__)
 CORS(app)
@@ -86,19 +85,28 @@ def detect_emergency(condition):
     }
 
 
-def confidence_score(providers, advocates, specialty):
+def confidence_score(providers, advocates, nearest_clinics, fallback_hospitals, recommended_hospitals, specialty):
     if specialty == "No exact AI specialty match":
-        return 0
-
-    score = 70
+        score = 35
+    else:
+        score = 70
 
     if len(providers) > 0:
         score += 15
 
     if len(advocates) > 0:
-        score += 10
+        score += 8
 
-    score += random.randint(0, 5)
+    if len(nearest_clinics) > 0:
+        score += 8
+
+    if len(fallback_hospitals) > 0:
+        score += 5
+
+    if len(recommended_hospitals) > 0:
+        score += 7
+
+    score += random.randint(0, 3)
 
     return min(score, 98)
 
@@ -119,29 +127,15 @@ def symptom_suggestions():
         data = request.get_json() or {}
         typed_condition = str(data.get("condition", "")).strip()
 
-        allowed_conditions = list(encoders["condition"].classes_)
-
-        direct_matches = [
-            condition for condition in allowed_conditions
-            if typed_condition.lower() in str(condition).lower()
-        ]
-
-        close_matches = get_close_matches(
-            typed_condition,
-            allowed_conditions,
-            n=5,
-            cutoff=0.2
-        )
-
-        suggestions = []
-
-        for item in direct_matches + close_matches:
-            if item not in suggestions:
-                suggestions.append(item)
+        if typed_condition == "":
+            return json_response({
+                "typed": "",
+                "suggestions": []
+            })
 
         return json_response({
             "typed": typed_condition,
-            "suggestions": suggestions[:5]
+            "suggestions": get_condition_suggestions(typed_condition, limit=5)
         })
 
     except Exception:
@@ -160,7 +154,7 @@ def get_recommendation():
         data = request.get_json() or {}
 
         patient = {
-            "age": int(data.get("age", 0)),
+            "age": int(data.get("age", 0) or 0),
             "gender": data.get("gender", ""),
             "city": data.get("city", ""),
             "insurance": data.get("insurance", ""),
@@ -169,24 +163,46 @@ def get_recommendation():
             "longitude": data.get("longitude")
         }
 
-        (
-            specialty,
+        result = recommend(patient)
+
+        if len(result) == 6:
+            (
+                specialty,
+                providers,
+                advocates,
+                nearest_clinics,
+                fallback_hospitals,
+                recommended_hospitals
+            ) = result
+        elif len(result) == 5:
+            (
+                specialty,
+                providers,
+                advocates,
+                nearest_clinics,
+                fallback_hospitals
+            ) = result
+            recommended_hospitals = pd.DataFrame()
+        else:
+            raise ValueError(f"recommend() returned {len(result)} values, but app.py expected 5 or 6.")
+
+        emergency = detect_emergency(patient["condition"])
+
+        confidence = confidence_score(
             providers,
             advocates,
             nearest_clinics,
-            fallback_hospitals
-        ) = recommend(patient)
-
-        emergency = detect_emergency(patient["condition"])
-        confidence = confidence_score(providers, advocates, specialty)
+            fallback_hospitals,
+            recommended_hospitals,
+            specialty
+        )
 
         ai_matched = specialty != "No exact AI specialty match"
 
-        message = (
-            "AI matched your condition to a specialty."
-            if ai_matched
-            else "This symptom was not found in the AI model, so nearby rural clinics and fallback care options are shown instead."
-        )
+        if ai_matched:
+            message = "AI matched your condition to a specialty."
+        else:
+            message = "This symptom was not found in the AI model, so nearby clinics, fallback care, and hospital options are shown instead."
 
         search_history.append({
             "city": patient["city"],
@@ -198,6 +214,8 @@ def get_recommendation():
             "provider_count": len(providers),
             "nearest_clinic_count": len(nearest_clinics),
             "fallback_hospital_count": len(fallback_hospitals),
+            "recommended_hospital_count": len(recommended_hospitals),
+            "advocate_count": len(advocates),
             "ai_matched": ai_matched
         })
 
@@ -210,15 +228,16 @@ def get_recommendation():
             "emergency": emergency,
             "providers": providers.head(5),
             "advocates": advocates.head(5),
-            "nearest_clinics": nearest_clinics.head(3),
-            "fallback_hospitals": fallback_hospitals.head(5)
+            "nearest_clinics": nearest_clinics.head(5),
+            "fallback_hospitals": fallback_hospitals.head(5),
+            "recommended_hospitals": recommended_hospitals.head(5)
         })
 
     except Exception as error:
         return json_response({
             "success": False,
             "ai_matched": False,
-            "message": "CareConnect AI could not process this request, but the system is still running.",
+            "message": "CareConnect AI could not process this request. Check app.py, recommendation_engine.py, provider_matcher.py, the Excel dataset, and Railway deployment.",
             "error": str(error),
             "specialty": "No exact AI specialty match",
             "confidence": 0,
@@ -229,7 +248,8 @@ def get_recommendation():
             "providers": [],
             "advocates": [],
             "nearest_clinics": [],
-            "fallback_hospitals": []
+            "fallback_hospitals": [],
+            "recommended_hospitals": []
         }, status=200)
 
 
