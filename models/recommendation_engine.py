@@ -1,3 +1,4 @@
+
 import sys
 from pathlib import Path
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -13,6 +14,7 @@ from models.provider_matcher import (
 
 from models.hospital_matcher import find_best_hospitals
 
+from models.long_term import find_best_long_term_hospitals
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 SAVE_DIR = BASE_DIR / "saved_models"
@@ -407,6 +409,12 @@ def recommend(patient):
         top_n=5,
         radius_miles=60
     )
+    recommended_long_term = find_best_long_term_hospitals(
+        patient_city = patient["city"],
+        condition = patient.get("condition", ""),
+        top_n = 5,
+        radius_miles= 80    
+                    )
 
     if predicted_specialty is None:
         predicted_specialty = "No exact AI specialty match"
@@ -438,6 +446,7 @@ if __name__ == "__main__":
         advocates,
         nearest_clinics,
         fallback_hospitals,
+        recommended_long_term,
         recommended_hospitals
     ) = recommend(sample_patient)
 
@@ -458,3 +467,6 @@ if __name__ == "__main__":
 
     print("\nMatching Advocates:")
     print(advocates)
+
+    print("\nRecommended Long Term Hospitals by Conditions:")
+    print(recommended_long_term)
