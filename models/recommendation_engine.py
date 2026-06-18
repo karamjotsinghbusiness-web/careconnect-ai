@@ -425,7 +425,7 @@ def recommend(patient):
         nearest_clinics.head(5),
         fallback_hospitals.head(5),
         recommended_hospitals.head(5),
-        recommended_long_term.head[5]
+        recommended_long_term.head(5)
     )
 
 
