@@ -14,6 +14,7 @@ from flask import Flask, request, Response
 from flask_cors import CORS
 from models.recommendation_engine import recommend, get_condition_suggestions
 
+
 app = Flask(__name__)
 CORS(app)
 
@@ -38,7 +39,13 @@ def clean_data(obj):
     if isinstance(obj, pd.DataFrame):
         return clean_data(obj.to_dict(orient="records"))
 
+    if isinstance(obj, pd.Series):
+        return clean_data(obj.to_dict())
+
     if isinstance(obj, list):
+        return [clean_data(item) for item in obj]
+
+    if isinstance(obj, tuple):
         return [clean_data(item) for item in obj]
 
     if isinstance(obj, dict):
@@ -55,6 +62,19 @@ def json_response(data, status=200):
         status=status,
         mimetype="application/json"
     )
+
+
+def as_dataframe(value):
+    if isinstance(value, pd.DataFrame):
+        return value
+
+    if value is None:
+        return pd.DataFrame()
+
+    try:
+        return pd.DataFrame(value)
+    except Exception:
+        return pd.DataFrame()
 
 
 def detect_emergency(condition):
@@ -85,7 +105,15 @@ def detect_emergency(condition):
     }
 
 
-def confidence_score(providers, advocates, nearest_clinics, fallback_hospitals, recommended_hospitals, specialty):
+def confidence_score(
+    providers,
+    advocates,
+    nearest_clinics,
+    fallback_hospitals,
+    recommended_hospitals,
+    recommended_long_term,
+    specialty
+):
     if specialty == "No exact AI specialty match":
         score = 35
     else:
@@ -104,6 +132,9 @@ def confidence_score(providers, advocates, nearest_clinics, fallback_hospitals, 
         score += 5
 
     if len(recommended_hospitals) > 0:
+        score += 7
+
+    if len(recommended_long_term) > 0:
         score += 7
 
     score += random.randint(0, 3)
@@ -165,7 +196,26 @@ def get_recommendation():
 
         result = recommend(patient)
 
-        if len(result) == 6:
+        specialty = "No exact AI specialty match"
+        providers = pd.DataFrame()
+        advocates = pd.DataFrame()
+        nearest_clinics = pd.DataFrame()
+        fallback_hospitals = pd.DataFrame()
+        recommended_hospitals = pd.DataFrame()
+        recommended_long_term = pd.DataFrame()
+
+        if len(result) == 7:
+            (
+                specialty,
+                providers,
+                advocates,
+                nearest_clinics,
+                fallback_hospitals,
+                recommended_hospitals,
+                recommended_long_term
+            ) = result
+
+        elif len(result) == 6:
             (
                 specialty,
                 providers,
@@ -174,6 +224,7 @@ def get_recommendation():
                 fallback_hospitals,
                 recommended_hospitals
             ) = result
+
         elif len(result) == 5:
             (
                 specialty,
@@ -182,9 +233,18 @@ def get_recommendation():
                 nearest_clinics,
                 fallback_hospitals
             ) = result
-            recommended_hospitals = pd.DataFrame()
+
         else:
-            raise ValueError(f"recommend() returned {len(result)} values, but app.py expected 5 or 6.")
+            raise ValueError(
+                f"recommend() returned {len(result)} values, but app.py expected 5, 6, or 7."
+            )
+
+        providers = as_dataframe(providers)
+        advocates = as_dataframe(advocates)
+        nearest_clinics = as_dataframe(nearest_clinics)
+        fallback_hospitals = as_dataframe(fallback_hospitals)
+        recommended_hospitals = as_dataframe(recommended_hospitals)
+        recommended_long_term = as_dataframe(recommended_long_term)
 
         emergency = detect_emergency(patient["condition"])
 
@@ -194,6 +254,7 @@ def get_recommendation():
             nearest_clinics,
             fallback_hospitals,
             recommended_hospitals,
+            recommended_long_term,
             specialty
         )
 
@@ -202,7 +263,7 @@ def get_recommendation():
         if ai_matched:
             message = "AI matched your condition to a specialty."
         else:
-            message = "This symptom was not found in the AI model, so nearby clinics, fallback care, and hospital options are shown instead."
+            message = "This symptom was not found in the AI model, so nearby clinics, fallback care, hospital options, and long-term hospital options are shown instead."
 
         search_history.append({
             "city": patient["city"],
@@ -215,6 +276,7 @@ def get_recommendation():
             "nearest_clinic_count": len(nearest_clinics),
             "fallback_hospital_count": len(fallback_hospitals),
             "recommended_hospital_count": len(recommended_hospitals),
+            "recommended_long_term_count": len(recommended_long_term),
             "advocate_count": len(advocates),
             "ai_matched": ai_matched
         })
@@ -230,14 +292,15 @@ def get_recommendation():
             "advocates": advocates.head(5),
             "nearest_clinics": nearest_clinics.head(5),
             "fallback_hospitals": fallback_hospitals.head(5),
-            "recommended_hospitals": recommended_hospitals.head(5)
+            "recommended_hospitals": recommended_hospitals.head(5),
+            "recommended_long_term": recommended_long_term.head(5)
         })
 
     except Exception as error:
         return json_response({
             "success": False,
             "ai_matched": False,
-            "message": "CareConnect AI could not process this request. Check app.py, recommendation_engine.py, provider_matcher.py, the Excel dataset, and Railway deployment.",
+            "message": "CareConnect AI could not process this request. Check app.py, recommendation_engine.py, provider_matcher.py, long_term.py, the Excel dataset, and Railway deployment.",
             "error": str(error),
             "specialty": "No exact AI specialty match",
             "confidence": 0,
@@ -249,7 +312,8 @@ def get_recommendation():
             "advocates": [],
             "nearest_clinics": [],
             "fallback_hospitals": [],
-            "recommended_hospitals": []
+            "recommended_hospitals": [],
+            "recommended_long_term": []
         }, status=200)
 
 
@@ -276,3 +340,4 @@ if __name__ == "__main__":
         port=5000,
         debug=True
     )
+
