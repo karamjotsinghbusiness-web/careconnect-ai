@@ -980,677 +980,698 @@ select:focus{
 </div>
 
 <script type="module">
-import { initializeApp } from "https://www.gstatic.com/firebasejs/12.14.0/firebase-app.js";
-import {
-    getAuth,
-    onAuthStateChanged,
-    signOut
-} from "https://www.gstatic.com/firebasejs/12.14.0/firebase-auth.js";
-import {
-    getFirestore,
-    collection,
-    addDoc,
-    serverTimestamp,
-    doc,
-    getDoc
-} from "https://www.gstatic.com/firebasejs/12.14.0/firebase-firestore.js";
-
-const firebaseConfig = {
-    apiKey: "AIzaSyB_O-wKgjdE0pFAvbKUabJBJnnvwBuw3ho",
-    authDomain: "careconnectai-19ace.firebaseapp.com",
-    databaseURL: "https://careconnectai-19ace-default-rtdb.firebaseio.com",
-    projectId: "careconnectai-19ace",
-    storageBucket: "careconnectai-19ace.firebasestorage.app",
-    messagingSenderId: "466959301708",
-    appId: "1:466959301708:web:67853efab3d3da610108e9",
-    measurementId: "G-7YE0JPDKK9"
-};
-
-const BACKEND_URL =
-    (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1")
-        ? "http://127.0.0.1:5000"
-        : "https://careconnect-ai-production-c747.up.railway.app";
-
-const firebaseApp = initializeApp(firebaseConfig);
-const auth = getAuth(firebaseApp);
-const db = getFirestore(firebaseApp);
-
-const form = document.getElementById("careForm");
-const resultBox = document.getElementById("resultBox");
-const specialtyCard = document.getElementById("specialtyCard");
-const mapBox = document.getElementById("map");
-const mapNote = document.getElementById("mapNote");
-const conditionInput = document.getElementById("condition");
-const suggestionBox = document.getElementById("suggestionBox");
-const logoutBtn = document.getElementById("logoutBtn");
-const menuToggle = document.getElementById("menuToggle");
-const sidebar = document.getElementById("sidebar");
-const sidebarOverlay = document.getElementById("sidebarOverlay");
-
-let map;
-let markers = [];
-let suggestionTimer;
-let currentUserData = null;
-
-function openSidebar(){
-    sidebar.classList.add("open");
-    sidebarOverlay.classList.add("show");
-    document.body.classList.add("nav-open");
-}
-
-function closeSidebar(){
-    sidebar.classList.remove("open");
-    sidebarOverlay.classList.remove("show");
-    document.body.classList.remove("nav-open");
-}
-
-menuToggle.addEventListener("click", openSidebar);
-sidebarOverlay.addEventListener("click", closeSidebar);
-
-document.querySelectorAll(".nav-link").forEach(link => {
-    link.addEventListener("click", closeSidebar);
-});
-
-window.initMap = function(){
-    map = new google.maps.Map(mapBox, {
-        zoom: 7,
-        center: {
-            lat: 38.5767,
-            lng: -92.1735
-        }
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/12.14.0/firebase-app.js";
+    import {
+        getAuth,
+        onAuthStateChanged,
+        signOut
+    } from "https://www.gstatic.com/firebasejs/12.14.0/firebase-auth.js";
+    import {
+        getFirestore,
+        collection,
+        addDoc,
+        serverTimestamp,
+        doc,
+        getDoc
+    } from "https://www.gstatic.com/firebasejs/12.14.0/firebase-firestore.js";
+    
+    const firebaseConfig = {
+        apiKey: "AIzaSyB_O-wKgjdE0pFAvbKUabJBJnnvwBuw3ho",
+        authDomain: "careconnectai-19ace.firebaseapp.com",
+        databaseURL: "https://careconnectai-19ace-default-rtdb.firebaseio.com",
+        projectId: "careconnectai-19ace",
+        storageBucket: "careconnectai-19ace.firebasestorage.app",
+        messagingSenderId: "466959301708",
+        appId: "1:466959301708:web:67853efab3d3da610108e9",
+        measurementId: "G-7YE0JPDKK9"
+    };
+    
+    const BACKEND_URL =
+        (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1")
+            ? "http://127.0.0.1:5000"
+            : "https://careconnect-ai-production-c747.up.railway.app";
+    
+    const firebaseApp = initializeApp(firebaseConfig);
+    const auth = getAuth(firebaseApp);
+    const db = getFirestore(firebaseApp);
+    
+    const form = document.getElementById("careForm");
+    const resultBox = document.getElementById("resultBox");
+    const specialtyCard = document.getElementById("specialtyCard");
+    const mapBox = document.getElementById("map");
+    const mapNote = document.getElementById("mapNote");
+    const conditionInput = document.getElementById("condition");
+    const suggestionBox = document.getElementById("suggestionBox");
+    const logoutBtn = document.getElementById("logoutBtn");
+    const menuToggle = document.getElementById("menuToggle");
+    const sidebar = document.getElementById("sidebar");
+    const sidebarOverlay = document.getElementById("sidebarOverlay");
+    
+    let map;
+    let markers = [];
+    let suggestionTimer;
+    let currentUserData = null;
+    
+    function openSidebar(){
+        sidebar.classList.add("open");
+        sidebarOverlay.classList.add("show");
+        document.body.classList.add("nav-open");
+    }
+    
+    function closeSidebar(){
+        sidebar.classList.remove("open");
+        sidebarOverlay.classList.remove("show");
+        document.body.classList.remove("nav-open");
+    }
+    
+    menuToggle.addEventListener("click", openSidebar);
+    sidebarOverlay.addEventListener("click", closeSidebar);
+    
+    document.querySelectorAll(".nav-link").forEach(link => {
+        link.addEventListener("click", closeSidebar);
     });
-};
-
-onAuthStateChanged(auth, async function(user){
-    if(!user){
-        window.location.href = "signup.html";
-        return;
-    }
-
-    const userRef = doc(db, "users", user.uid);
-    const userSnap = await getDoc(userRef);
-
-    if(userSnap.exists()){
-        currentUserData = userSnap.data();
-
-        document.getElementById("welcome").innerText =
-            `Welcome, ${currentUserData.fullName || "CareConnect User"}`;
-
-        document.getElementById("userInfo").innerText = user.email;
-
-        document.getElementById("profileName").innerText =
-            currentUserData.fullName || "CareConnect User";
-
-        document.getElementById("profileEmail").innerText =
-            user.email;
-
-        document.getElementById("profileRole").innerText =
-            currentUserData.role || "Patient";
-
-        document.getElementById("profileCity").innerText =
-            currentUserData.city || "Missouri";
-    }else{
-        document.getElementById("welcome").innerText = "Welcome";
-        document.getElementById("userInfo").innerText = user.email;
-        document.getElementById("profileName").innerText = "CareConnect User";
-        document.getElementById("profileEmail").innerText = user.email;
-        document.getElementById("profileRole").innerText = "Patient";
-        document.getElementById("profileCity").innerText = "Missouri";
-    }
-
-    logoutBtn.style.display = "block";
-});
-
-logoutBtn.addEventListener("click", async function(){
-    await signOut(auth);
-    window.location.href = "signup.html";
-});
-
-conditionInput.addEventListener("input", function(){
-    clearTimeout(suggestionTimer);
-
-    suggestionTimer = setTimeout(() => {
-        getSymptomSuggestions();
-    }, 350);
-});
-
-async function getSymptomSuggestions(){
-    const text = conditionInput.value.trim();
-
-    if(text.length < 2){
-        suggestionBox.innerHTML = "";
-        return;
-    }
-
-    try{
-        const response = await fetch(`${BACKEND_URL}/symptom_suggestions`, {
-            method:"POST",
-            headers:{
-                "Content-Type":"application/json"
-            },
-            body:JSON.stringify({
-                condition:text
-            })
+    
+    window.initMap = function(){
+        map = new google.maps.Map(mapBox, {
+            zoom: 7,
+            center: {
+                lat: 38.5767,
+                lng: -92.1735
+            }
         });
-
-        const data = await response.json();
-
-        suggestionBox.innerHTML = "";
-
-        if(!data.suggestions || data.suggestions.length === 0){
+    };
+    
+    onAuthStateChanged(auth, async function(user){
+        if(!user){
+            window.location.href = "signup.html";
+            return;
+        }
+    
+        const userRef = doc(db, "users", user.uid);
+        const userSnap = await getDoc(userRef);
+    
+        if(userSnap.exists()){
+            currentUserData = userSnap.data();
+    
+            document.getElementById("welcome").innerText =
+                `Welcome, ${currentUserData.fullName || "CareConnect User"}`;
+    
+            document.getElementById("userInfo").innerText = user.email;
+    
+            document.getElementById("profileName").innerText =
+                currentUserData.fullName || "CareConnect User";
+    
+            document.getElementById("profileEmail").innerText =
+                user.email;
+    
+            document.getElementById("profileRole").innerText =
+                currentUserData.role || "Patient";
+    
+            document.getElementById("profileCity").innerText =
+                currentUserData.city || "Missouri";
+        }else{
+            document.getElementById("welcome").innerText = "Welcome";
+            document.getElementById("userInfo").innerText = user.email;
+            document.getElementById("profileName").innerText = "CareConnect User";
+            document.getElementById("profileEmail").innerText = user.email;
+            document.getElementById("profileRole").innerText = "Patient";
+            document.getElementById("profileCity").innerText = "Missouri";
+        }
+    
+        logoutBtn.style.display = "block";
+    });
+    
+    logoutBtn.addEventListener("click", async function(){
+        await signOut(auth);
+        window.location.href = "signup.html";
+    });
+    
+    conditionInput.addEventListener("input", function(){
+        clearTimeout(suggestionTimer);
+    
+        suggestionTimer = setTimeout(() => {
+            getSymptomSuggestions();
+        }, 350);
+    });
+    
+    async function getSymptomSuggestions(){
+        const text = conditionInput.value.trim();
+    
+        if(text.length < 2){
+            suggestionBox.innerHTML = "";
+            return;
+        }
+    
+        try{
+            const response = await fetch(`${BACKEND_URL}/symptom_suggestions`, {
+                method:"POST",
+                headers:{
+                    "Content-Type":"application/json"
+                },
+                body:JSON.stringify({
+                    condition:text
+                })
+            });
+    
+            const data = await response.json();
+    
+            suggestionBox.innerHTML = "";
+    
+            if(!data.suggestions || data.suggestions.length === 0){
+                suggestionBox.innerHTML = `
+                    <div class="suggestion-title">
+                        No close matches found. You can still search; CareConnect AI will show clinics and fallback options.
+                    </div>
+                `;
+                return;
+            }
+    
             suggestionBox.innerHTML = `
                 <div class="suggestion-title">
-                    No close matches found. You can still search; CareConnect AI will show clinics and fallback options.
+                    Did you mean one of these?
                 </div>
             `;
-            return;
-        }
-
-        suggestionBox.innerHTML = `
-            <div class="suggestion-title">
-                Did you mean one of these?
-            </div>
-        `;
-
-        data.suggestions.forEach(suggestion => {
-            const button = document.createElement("button");
-
-            button.type = "button";
-            button.className = "suggestion-btn";
-            button.innerHTML = `<b>${suggestion}</b>`;
-
-            button.addEventListener("click", () => {
-                conditionInput.value = suggestion;
-                suggestionBox.innerHTML = "";
+    
+            data.suggestions.forEach(suggestion => {
+                const button = document.createElement("button");
+    
+                button.type = "button";
+                button.className = "suggestion-btn";
+                button.innerHTML = `<b>${suggestion}</b>`;
+    
+                button.addEventListener("click", () => {
+                    conditionInput.value = suggestion;
+                    suggestionBox.innerHTML = "";
+                });
+    
+                suggestionBox.appendChild(button);
             });
-
-            suggestionBox.appendChild(button);
-        });
-
-    }catch(error){
-        console.log("Suggestion error:", error);
-    }
-}
-
-function clearMarkers(){
-    markers.forEach(marker => marker.setMap(null));
-    markers = [];
-}
-
-function cleanValue(value, fallback="N/A"){
-    if(value === null || value === undefined || value === "" || value === "nan"){
-        return fallback;
-    }
-
-    return value;
-}
-
-function getName(item){
-    return (
-        item.provider_name ||
-        item.clinic_name ||
-        item.facility_name ||
-        item.facility_name_clean ||
-        item.organization ||
-        item.name ||
-        "Unknown"
-    );
-}
-
-function getCity(item){
-    return (
-        item.city ||
-        item.city_town ||
-        item.town ||
-        "N/A"
-    );
-}
-
-function getPhone(item){
-    return (
-        item.phone ||
-        item.telephone_number ||
-        "N/A"
-    );
-}
-
-function getAddress(item){
-    return (
-        item.address ||
-        item.location ||
-        ""
-    );
-}
-
-function getMapsUrl(item){
-    const itemName = getName(item);
-    const address = getAddress(item);
-    const city = getCity(item);
-
-    const query = `${itemName} ${address} ${city} Missouri`;
-
-    return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(query)}`;
-}
-
-function addMarker(item, label){
-    if(!map){
-        return null;
-    }
-
-    if(!item.latitude || !item.longitude){
-        return null;
-    }
-
-    const location = {
-        lat:Number(item.latitude),
-        lng:Number(item.longitude)
-    };
-
-    const itemName = getName(item);
-    const city = getCity(item);
-
-    const marker = new google.maps.Marker({
-        position:location,
-        map:map,
-        title:itemName,
-        label:label
-    });
-
-    const infoWindow = new google.maps.InfoWindow({
-        content:`
-            <div style="font-family:Arial;max-width:230px;">
-                <h3 style="color:#0f766e;">${itemName}</h3>
-                <p><b>City:</b> ${city}</p>
-                <p><b>Specialty:</b> ${item.specialty || item.primary_specialty || "N/A"}</p>
-                <p><b>Phone:</b> ${getPhone(item)}</p>
-                <p><b>Distance:</b> ${item.distance_miles || "Unknown"} miles</p>
-                <a href="${getMapsUrl(item)}" target="_blank">Open in Google Maps</a>
-            </div>
-        `
-    });
-
-    marker.addListener("click", () => {
-        infoWindow.open(map, marker);
-    });
-
-    markers.push(marker);
-
-    return location;
-}
-
-function displayLocationsOnMap(
-    providers,
-    nearestClinics,
-    fallbackHospitals
-){
-    if(!map){
-        return;
-    }
-
-    clearMarkers();
-
-    const bounds = new google.maps.LatLngBounds();
-    let foundLocations = 0;
-
-    providers.forEach(item => {
-        const location = addMarker(item, "P");
-
-        if(location){
-            bounds.extend(location);
-            foundLocations++;
+    
+        }catch(error){
+            console.log("Suggestion error:", error);
         }
-    });
-
-    nearestClinics.forEach(item => {
-        const location = addMarker(item, "C");
-
-        if(location){
-            bounds.extend(location);
-            foundLocations++;
-        }
-    });
-
-    fallbackHospitals.forEach(item => {
-        const location = addMarker(item, "H");
-
-        if(location){
-            bounds.extend(location);
-            foundLocations++;
-        }
-    });
-
-    if(foundLocations > 0){
-        mapBox.style.display = "block";
-        mapNote.innerText =
-            "Map shows providers, rural clinics, and fallback hospital/clinic options with available coordinates.";
-        map.fitBounds(bounds);
-    }else{
-        mapBox.style.display = "none";
-        mapNote.innerText =
-            "No coordinates found for the returned locations.";
     }
-}
-
-function buildProviderCards(items, cardClass){
-    let html = "";
-
-    items.forEach(item => {
+    
+    function clearMarkers(){
+        markers.forEach(marker => marker.setMap(null));
+        markers = [];
+    }
+    
+    function cleanValue(value, fallback="N/A"){
+        if(value === null || value === undefined || value === "" || value === "nan"){
+            return fallback;
+        }
+    
+        return value;
+    }
+    
+    function getName(item){
+        return (
+            item.provider_name ||
+            item.clinic_name ||
+            item.facility_name ||
+            item.facility_name_clean ||
+            item.organization ||
+            item.name ||
+            "Unknown"
+        );
+    }
+    
+    function getCity(item){
+        return (
+            item.city ||
+            item.city_town ||
+            item.town ||
+            "N/A"
+        );
+    }
+    
+    function getPhone(item){
+        return (
+            item.phone ||
+            item.telephone_number ||
+            "N/A"
+        );
+    }
+    
+    function getAddress(item){
+        return (
+            item.address ||
+            item.location ||
+            ""
+        );
+    }
+    
+    function getMapsUrl(item){
+        const itemName = getName(item);
+        const address = getAddress(item);
+        const city = getCity(item);
+    
+        const query = `${itemName} ${address} ${city} Missouri`;
+    
+        return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(query)}`;
+    }
+    
+    function addMarker(item, label){
+        if(!map){
+            return null;
+        }
+    
+        if(!item.latitude || !item.longitude){
+            return null;
+        }
+    
+        const location = {
+            lat:Number(item.latitude),
+            lng:Number(item.longitude)
+        };
+    
         const itemName = getName(item);
         const city = getCity(item);
-        const distance = item.distance_miles || "Unknown";
-        const mapsUrl = getMapsUrl(item);
-
-        html += `
-            <div class="${cardClass}">
-                <h4>${itemName}</h4>
-                <p><b>Specialty:</b> ${item.specialty || item.primary_specialty || "N/A"}</p>
-                <p><b>City:</b> ${city}</p>
-                <p><b>Phone:</b> ${getPhone(item)}</p>
-                <p><b>Credential:</b> ${item.credential || "N/A"}</p>
-                <p><b>Distance:</b> ${distance} miles</p>
-                <p><b>Accepting New Patients:</b> ${item.accepting_new_patients || "Unknown"}</p>
-                <a href="${mapsUrl}" target="_blank">Open directions</a>
-            </div>
-        `;
-    });
-
-    return html;
-}
-
-function buildAdvocateCards(advocates){
-    let html = "";
-
-    advocates.forEach(advocate => {
-        html += `
-            <div class="advocate-card">
-                <h4>${advocate.advocate_name || advocate.provider_name || advocate.name || "Unknown Advocate"}</h4>
-                <p><b>Role:</b> ${advocate.role || advocate.specialty || "N/A"}</p>
-                <p><b>City:</b> ${advocate.city || "N/A"}</p>
-                <p><b>Phone:</b> ${advocate.phone || "N/A"}</p>
-            </div>
-        `;
-    });
-
-    return html;
-}
-
-function buildRecommendedHospitalCards(hospitals){
-    let html = "";
-
-    hospitals.forEach(hospital => {
-        const name = hospital.facility_name || "Unknown Hospital";
-        const city = hospital.city_town || "N/A";
-        const phone = hospital.telephone_number || "N/A";
-        const distance = hospital.distance_miles || "Unknown";
-        const measureId = hospital.measure_id || "N/A";
-        const measureName = hospital.measure_name || "N/A";
-        const compared = hospital.compared_to_national || "N/A";
-        const score = hospital.score || "N/A";
-        const careScore = hospital.careconnect_score || "N/A";
-        const mapsUrl = getMapsUrl(hospital);
-
-        html += `
-            <div class="quality-hospital-card">
-                <span class="score-pill">CareConnect Score: ${careScore}</span>
-                <h4>${name}</h4>
-                <p><b>City:</b> ${city}</p>
-                <p><b>Phone:</b> ${phone}</p>
-                <p><b>Distance:</b> ${distance} miles</p>
-                <p><b>Quality Measure:</b> ${measureId}</p>
-                <p><b>Measure Name:</b> ${measureName}</p>
-                <p><b>Compared to National:</b> ${compared}</p>
-                <p><b>Score:</b> ${score}</p>
-                <a href="${mapsUrl}" target="_blank">Open directions</a>
-            </div>
-        `;
-    });
-
-    return html;
-}
-
-async function saveSearchToFirebase(searchData){
-    const user = auth.currentUser;
-
-    await addDoc(collection(db, "patient_searches"), {
-        ...searchData,
-        userId:user ? user.uid : null,
-        userEmail:user ? user.email : null,
-        userName:currentUserData?.fullName || null,
-        createdAt:serverTimestamp()
-    });
-}
-
-form.addEventListener("submit", async function(event){
-    event.preventDefault();
-
-    suggestionBox.innerHTML = "";
-    resultBox.style.display = "block";
-    resultBox.innerHTML = "Analyzing patient information...";
-    mapBox.style.display = "none";
-    mapNote.innerText = "";
-
-    const patientData = {
-        age:document.getElementById("age").value,
-        gender:document.getElementById("gender").value,
-        city:document.getElementById("city").value,
-        insurance:document.getElementById("insurance").value,
-        condition:conditionInput.value,
-        latitude:null,
-        longitude:null
-    };
-
-    try{
-        const response = await fetch(`${BACKEND_URL}/recommend`, {
-            method:"POST",
-            headers:{
-                "Content-Type":"application/json"
-            },
-            body:JSON.stringify(patientData)
+    
+        const marker = new google.maps.Marker({
+            position:location,
+            map:map,
+            title:itemName,
+            label:label
         });
-
-        const data = await response.json();
-        console.log("CareConnect backend response:", data);
-
-        if(data.success === false){
-            resultBox.innerHTML = `
-                <div class="emergency-warning">
-                    <h3>Backend returned an error</h3>
-                    <p>${data.message || "CareConnect AI could not process this request."}</p>
-                    <p><b>Error:</b> ${data.error || "No error message returned."}</p>
-                    <p class="section-note">This usually means Railway is still running old backend code, app.py is not updated, or the updated dataset/model files were not deployed.</p>
-                </div>
-            `;
-            return;
-        }
-
-        const specialty = data.specialty || "No specialty returned";
-        const confidence = data.confidence ?? 0;
-        const emergency = data.emergency || {};
-        const message = data.message || "";
-
-        const providers = Array.isArray(data.providers) ? data.providers : [];
-        const advocates = Array.isArray(data.advocates) ? data.advocates : [];
-        const nearestClinics = Array.isArray(data.nearest_clinics) ? data.nearest_clinics : [];
-        const fallbackHospitals = Array.isArray(data.fallback_hospitals) ? data.fallback_hospitals : [];
-        const recommendedHospitals = Array.isArray(data.recommended_hospitals) ? data.recommended_hospitals : [];
-        const longtermHospitals = Array.isArray(data.recommended_long_term) ? data.recommended_long_term : [];
-
-        specialtyCard.innerText =
-            `${specialty} (${confidence}% confidence)`;
-
-        await saveSearchToFirebase({
-            age:patientData.age,
-            gender:patientData.gender,
-            city:patientData.city,
-            insurance:patientData.insurance,
-            condition:patientData.condition,
-            recommendedSpecialty:specialty,
-            confidence:confidence,
-            emergencyDetected:emergency.is_emergency || false,
-            providerCount:providers.length,
-            nearestClinicCount:nearestClinics.length,
-            fallbackHospitalCount:fallbackHospitals.length,
-            recommendedHospitalCount:recommendedHospitals.length,
-            advocateCount:advocates.length,
-            topProvider:providers[0]?.provider_name || null,
-            topClinic:getName(nearestClinics[0] || {}),
-            topFallback:getName(fallbackHospitals[0] || {}),
-            topRecommendedHospital:recommendedHospitals[0]?.facility_name || null,
-            topAdvocate:advocates[0]?.advocate_name || advocates[0]?.provider_name || null
-        });
-
-        const emergencyHTML = emergency.is_emergency
-            ? `
-                <div class="emergency-warning">
-                    <h3>Urgent Warning</h3>
-                    <p>${emergency.message}</p>
+    
+        const infoWindow = new google.maps.InfoWindow({
+            content:`
+                <div style="font-family:Arial;max-width:230px;">
+                    <h3 style="color:#0f766e;">${itemName}</h3>
+                    <p><b>City:</b> ${city}</p>
+                    <p><b>Specialty:</b> ${item.specialty || item.primary_specialty || "N/A"}</p>
+                    <p><b>Phone:</b> ${getPhone(item)}</p>
+                    <p><b>Distance:</b> ${item.distance_miles || "Unknown"} miles</p>
+                    <a href="${getMapsUrl(item)}" target="_blank">Open in Google Maps</a>
                 </div>
             `
-            : `
-                <div class="safe-warning">
-                    <h3>Emergency Check</h3>
-                    <p>${emergency.message || "No emergency warning detected."}</p>
+        });
+    
+        marker.addListener("click", () => {
+            infoWindow.open(map, marker);
+        });
+    
+        markers.push(marker);
+    
+        return location;
+    }
+    
+    function displayLocationsOnMap(
+        providers,
+        nearestClinics,
+        fallbackHospitals,
+        recommendedHospitals,
+        longtermHospitals
+    ){
+        if(!map){
+            return;
+        }
+    
+        clearMarkers();
+    
+        const bounds = new google.maps.LatLngBounds();
+        let foundLocations = 0;
+    
+        providers.forEach(item => {
+            const location = addMarker(item, "P");
+    
+            if(location){
+                bounds.extend(location);
+                foundLocations++;
+            }
+        });
+    
+        nearestClinics.forEach(item => {
+            const location = addMarker(item, "C");
+    
+            if(location){
+                bounds.extend(location);
+                foundLocations++;
+            }
+        });
+    
+        fallbackHospitals.forEach(item => {
+            const location = addMarker(item, "H");
+    
+            if(location){
+                bounds.extend(location);
+                foundLocations++;
+            }
+        });
+    
+        recommendedHospitals.forEach(item => {
+            const location = addMarker(item, "Q");
+    
+            if(location){
+                bounds.extend(location);
+                foundLocations++;
+            }
+        });
+    
+        longtermHospitals.forEach(item => {
+            const location = addMarker(item, "L");
+    
+            if(location){
+                bounds.extend(location);
+                foundLocations++;
+            }
+        });
+    
+        if(foundLocations > 0){
+            mapBox.style.display = "block";
+            mapNote.innerText =
+                "Map shows providers, rural clinics, fallback care, quality hospitals, and long-term hospital options with available coordinates.";
+            map.fitBounds(bounds);
+        }else{
+            mapBox.style.display = "none";
+            mapNote.innerText =
+                "No coordinates found for the returned locations.";
+        }
+    }
+    
+    function buildProviderCards(items, cardClass){
+        let html = "";
+    
+        items.forEach(item => {
+            const itemName = getName(item);
+            const city = getCity(item);
+            const distance = item.distance_miles || "Unknown";
+            const mapsUrl = getMapsUrl(item);
+    
+            html += `
+                <div class="${cardClass}">
+                    <h4>${itemName}</h4>
+                    <p><b>Specialty:</b> ${item.specialty || item.primary_specialty || "N/A"}</p>
+                    <p><b>City:</b> ${city}</p>
+                    <p><b>Phone:</b> ${getPhone(item)}</p>
+                    <p><b>Credential:</b> ${item.credential || "N/A"}</p>
+                    <p><b>Distance:</b> ${distance} miles</p>
+                    <p><b>Accepting New Patients:</b> ${item.accepting_new_patients || "Unknown"}</p>
+                    <a href="${mapsUrl}" target="_blank">Open directions</a>
                 </div>
             `;
-
-        const providerHTML = buildProviderCards(
-            providers,
-            "provider-card"
-        );
-
-        const clinicHTML = buildProviderCards(
-            nearestClinics,
-            "clinic-card"
-        );
-
-        const fallbackHTML = buildProviderCards(
-            fallbackHospitals,
-            "hospital-card"
-        );
-
-        const recommendedHospitalHTML = buildRecommendedHospitalCards(
-            recommendedHospitals
-        );
-
-        const advocateHTML = buildAdvocateCards(
-            advocates
-        );
-
-        const longtermHTML = buildAdvocateCards(
-            longtermHospitals
-
-        );
-
-        resultBox.innerHTML = `
-            ${emergencyHTML}
-
-            <div class="ai-box">
-                <h3>AI Recommendation</h3>
-                <p><b>Recommended Specialty:</b> ${specialty}</p>
-                <p><b>Confidence Score:</b> ${confidence}%</p>
-                <p><b>Patient City:</b> ${patientData.city}</p>
-                <p><b>Insurance:</b> ${patientData.insurance}</p>
-                <p><b>System Message:</b> ${message || "CareConnect AI completed the match."}</p>
-                <p><b>Saved:</b> Search saved to Firebase.</p>
-            </div>
-
-            <h3>Closest Matching Providers</h3>
-            <p class="section-note">
-                Specialty providers matched by the AI prediction.
-            </p>
-            ${providerHTML || "<p>No exact specialty providers found.</p>"}
-
-            <br>
-
-            <h3>Nearest Rural Clinics</h3>
-            <p class="section-note">
-                Closest rural clinics or health centers based on the city entered.
-            </p>
-            ${clinicHTML || "<p>No nearby rural clinics found.</p>"}
-
-            <br>
-
-            <h3>Recommended Hospitals by Condition</h3>
-            <p class="section-note">
-                Nearby hospitals ranked using condition-based quality measures and distance.
-            </p>
-            ${recommendedHospitalHTML || "<p>No hospital quality matches found.</p>"}
-
-            <br>
-
-            <h3>Fallback Hospitals / Clinics</h3>
-            <p class="section-note">
-                Backup care options shown when exact specialty providers are limited.
-            </p>
-            ${fallbackHTML || "<p>No fallback hospitals or clinics found.</p>"}
-
-            <br>
-
-            <h3>Care Support Specialists</h3>
-            <p class="section-note">
-                Professionals who can help with care coordination, resources, and support.
-            </p>
-            ${advocateHTML || "<p>No advocates found.</p>"}
-
-            <br>
-
-            <h3>Recommended Long Term Hospitals by Conditions</h3>
-            <p class="section-note">
-                Recommended Long Term Hospitals based off of condition-based quality, long-term support, and distance.
-            </p>
-            ${longtermHTML} || "<p>No Recommended Long Term Hospitals by Conditions found."</p>
-        `;
-
-        displayLocationsOnMap(
-            providers,
-            nearestClinics,
-            fallbackHospitals,
-            recommendedHospitals,
-            longtermHTML
-        );
-
-        loadAnalytics();
-
-    }catch(error){
-        console.error("Dashboard error:", error);
-
-        resultBox.innerHTML = `
-            Error after connecting to backend or Firebase:<br><br>
-            <b>${error.message}</b>
-        `;
+        });
+    
+        return html;
     }
-});
-
-async function loadAnalytics(){
-    try{
-        const response = await fetch(`${BACKEND_URL}/analytics`);
-        const data = await response.json();
-
-        const activityList = document.getElementById("activityList");
-
-        let recentHTML = `
-            <li>Total Searches: ${data.total_searches}</li>
-        `;
-
-        data.recent_searches.forEach(search => {
-            recentHTML += `
-                <li>${search.condition} → ${search.specialty} (${search.confidence}%)</li>
+    
+    function buildAdvocateCards(advocates){
+        let html = "";
+    
+        advocates.forEach(advocate => {
+            html += `
+                <div class="advocate-card">
+                    <h4>${advocate.advocate_name || advocate.provider_name || advocate.name || "Unknown Advocate"}</h4>
+                    <p><b>Role:</b> ${advocate.role || advocate.specialty || "N/A"}</p>
+                    <p><b>City:</b> ${advocate.city || "N/A"}</p>
+                    <p><b>Phone:</b> ${advocate.phone || "N/A"}</p>
+                </div>
             `;
         });
-
-        activityList.innerHTML = recentHTML;
-
-    }catch(error){
-        console.log("Analytics not loaded:", error);
+    
+        return html;
     }
-}
-
-loadAnalytics();
-</script>
-
-<script async defer
-src="https://maps.googleapis.com/maps/api/js?key=AIzaSyDms8HF9oyB6tRUAp7ZukLLkYhHWCjWYDY&callback=initMap">
-</script>
-
+    
+    function buildRecommendedHospitalCards(hospitals){
+        let html = "";
+    
+        hospitals.forEach(hospital => {
+            const name = hospital.facility_name || "Unknown Hospital";
+            const city = hospital.city_town || "N/A";
+            const phone = hospital.telephone_number || "N/A";
+            const distance = hospital.distance_miles || "Unknown";
+            const measureId = hospital.measure_id || "N/A";
+            const measureName = hospital.measure_name || "N/A";
+            const compared = hospital.compared_to_national || "N/A";
+            const score = hospital.score || "N/A";
+            const careScore = hospital.careconnect_score || "N/A";
+            const mapsUrl = getMapsUrl(hospital);
+    
+            html += `
+                <div class="quality-hospital-card">
+                    <span class="score-pill">CareConnect Score: ${careScore}</span>
+                    <h4>${name}</h4>
+                    <p><b>City:</b> ${city}</p>
+                    <p><b>Phone:</b> ${phone}</p>
+                    <p><b>Distance:</b> ${distance} miles</p>
+                    <p><b>Quality Measure:</b> ${measureId}</p>
+                    <p><b>Measure Name:</b> ${measureName}</p>
+                    <p><b>Compared to National:</b> ${compared}</p>
+                    <p><b>Score:</b> ${score}</p>
+                    <a href="${mapsUrl}" target="_blank">Open directions</a>
+                </div>
+            `;
+        });
+    
+        return html;
+    }
+    
+    async function saveSearchToFirebase(searchData){
+        const user = auth.currentUser;
+    
+        await addDoc(collection(db, "patient_searches"), {
+            ...searchData,
+            userId:user ? user.uid : null,
+            userEmail:user ? user.email : null,
+            userName:currentUserData?.fullName || null,
+            createdAt:serverTimestamp()
+        });
+    }
+    
+    form.addEventListener("submit", async function(event){
+        event.preventDefault();
+    
+        suggestionBox.innerHTML = "";
+        resultBox.style.display = "block";
+        resultBox.innerHTML = "Analyzing patient information...";
+        mapBox.style.display = "none";
+        mapNote.innerText = "";
+    
+        const patientData = {
+            age:document.getElementById("age").value,
+            gender:document.getElementById("gender").value,
+            city:document.getElementById("city").value,
+            insurance:document.getElementById("insurance").value,
+            condition:conditionInput.value,
+            latitude:null,
+            longitude:null
+        };
+    
+        try{
+            const response = await fetch(`${BACKEND_URL}/recommend`, {
+                method:"POST",
+                headers:{
+                    "Content-Type":"application/json"
+                },
+                body:JSON.stringify(patientData)
+            });
+    
+            const data = await response.json();
+            console.log("CareConnect backend response:", data);
+    
+            if(data.success === false){
+                resultBox.innerHTML = `
+                    <div class="emergency-warning">
+                        <h3>Backend returned an error</h3>
+                        <p>${data.message || "CareConnect AI could not process this request."}</p>
+                        <p><b>Error:</b> ${data.error || "No error message returned."}</p>
+                        <p class="section-note">This usually means Railway is still running old backend code, app.py is not updated, or the updated dataset/model files were not deployed.</p>
+                    </div>
+                `;
+                return;
+            }
+    
+            const specialty = data.specialty || "No specialty returned";
+            const confidence = data.confidence ?? 0;
+            const emergency = data.emergency || {};
+            const message = data.message || "";
+    
+            const providers = Array.isArray(data.providers) ? data.providers : [];
+            const advocates = Array.isArray(data.advocates) ? data.advocates : [];
+            const nearestClinics = Array.isArray(data.nearest_clinics) ? data.nearest_clinics : [];
+            const fallbackHospitals = Array.isArray(data.fallback_hospitals) ? data.fallback_hospitals : [];
+            const recommendedHospitals = Array.isArray(data.recommended_hospitals) ? data.recommended_hospitals : [];
+            const longtermHospitals = Array.isArray(data.recommended_long_term) ? data.recommended_long_term : [];
+    
+            specialtyCard.innerText =
+                `${specialty} (${confidence}% confidence)`;
+    
+            await saveSearchToFirebase({
+                age:patientData.age,
+                gender:patientData.gender,
+                city:patientData.city,
+                insurance:patientData.insurance,
+                condition:patientData.condition,
+                recommendedSpecialty:specialty,
+                confidence:confidence,
+                emergencyDetected:emergency.is_emergency || false,
+                providerCount:providers.length,
+                nearestClinicCount:nearestClinics.length,
+                fallbackHospitalCount:fallbackHospitals.length,
+                recommendedHospitalCount:recommendedHospitals.length,
+                recommendedLongTermCount:longtermHospitals.length,
+                advocateCount:advocates.length,
+                topProvider:providers[0]?.provider_name || null,
+                topClinic:getName(nearestClinics[0] || {}),
+                topFallback:getName(fallbackHospitals[0] || {}),
+                topRecommendedHospital:recommendedHospitals[0]?.facility_name || null,
+                topRecommendedLongTerm:longtermHospitals[0]?.facility_name || null,
+                topAdvocate:advocates[0]?.advocate_name || advocates[0]?.provider_name || null
+            });
+    
+            const emergencyHTML = emergency.is_emergency
+                ? `
+                    <div class="emergency-warning">
+                        <h3>Urgent Warning</h3>
+                        <p>${emergency.message}</p>
+                    </div>
+                `
+                : `
+                    <div class="safe-warning">
+                        <h3>Emergency Check</h3>
+                        <p>${emergency.message || "No emergency warning detected."}</p>
+                    </div>
+                `;
+    
+            const providerHTML = buildProviderCards(
+                providers,
+                "provider-card"
+            );
+    
+            const clinicHTML = buildProviderCards(
+                nearestClinics,
+                "clinic-card"
+            );
+    
+            const fallbackHTML = buildProviderCards(
+                fallbackHospitals,
+                "hospital-card"
+            );
+    
+            const recommendedHospitalHTML = buildRecommendedHospitalCards(
+                recommendedHospitals
+            );
+    
+            const advocateHTML = buildAdvocateCards(
+                advocates
+            );
+    
+            const longtermHTML = buildRecommendedHospitalCards(
+                longtermHospitals
+            );
+    
+            resultBox.innerHTML = `
+                ${emergencyHTML}
+    
+                <div class="ai-box">
+                    <h3>AI Recommendation</h3>
+                    <p><b>Recommended Specialty:</b> ${specialty}</p>
+                    <p><b>Confidence Score:</b> ${confidence}%</p>
+                    <p><b>Patient City:</b> ${patientData.city}</p>
+                    <p><b>Insurance:</b> ${patientData.insurance}</p>
+                    <p><b>System Message:</b> ${message || "CareConnect AI completed the match."}</p>
+                    <p><b>Saved:</b> Search saved to Firebase.</p>
+                </div>
+    
+                <h3>Closest Matching Providers</h3>
+                <p class="section-note">
+                    Specialty providers matched by the AI prediction.
+                </p>
+                ${providerHTML || "<p>No exact specialty providers found.</p>"}
+    
+                <br>
+    
+                <h3>Nearest Rural Clinics</h3>
+                <p class="section-note">
+                    Closest rural clinics or health centers based on the city entered.
+                </p>
+                ${clinicHTML || "<p>No nearby rural clinics found.</p>"}
+    
+                <br>
+    
+                <h3>Recommended Hospitals by Condition</h3>
+                <p class="section-note">
+                    Nearby hospitals ranked using condition-based quality measures and distance.
+                </p>
+                ${recommendedHospitalHTML || "<p>No hospital quality matches found.</p>"}
+    
+                <br>
+    
+                <h3>Fallback Hospitals / Clinics</h3>
+                <p class="section-note">
+                    Backup care options shown when exact specialty providers are limited.
+                </p>
+                ${fallbackHTML || "<p>No fallback hospitals or clinics found.</p>"}
+    
+                <br>
+    
+                <h3>Care Support Specialists</h3>
+                <p class="section-note">
+                    Professionals who can help with care coordination, resources, and support.
+                </p>
+                ${advocateHTML || "<p>No advocates found.</p>"}
+    
+                <br>
+    
+                <h3>Recommended Long-Term Hospitals by Condition</h3>
+                <p class="section-note">
+                    Long-term hospitals ranked using LTCH quality measures, long-term support, and distance.
+                </p>
+                ${longtermHTML || "<p>No recommended long-term hospital matches found.</p>"}
+            `;
+    
+            displayLocationsOnMap(
+                providers,
+                nearestClinics,
+                fallbackHospitals,
+                recommendedHospitals,
+                longtermHospitals
+            );
+    
+            loadAnalytics();
+    
+        }catch(error){
+            console.error("Dashboard error:", error);
+    
+            resultBox.innerHTML = `
+                Error after connecting to backend or Firebase:<br><br>
+                <b>${error.message}</b>
+            `;
+        }
+    });
+    
+    async function loadAnalytics(){
+        try{
+            const response = await fetch(`${BACKEND_URL}/analytics`);
+            const data = await response.json();
+    
+            const activityList = document.getElementById("activityList");
+    
+            let recentHTML = `
+                <li>Total Searches: ${data.total_searches}</li>
+            `;
+    
+            data.recent_searches.forEach(search => {
+                recentHTML += `
+                    <li>${search.condition} → ${search.specialty} (${search.confidence}%)</li>
+                `;
+            });
+    
+            activityList.innerHTML = recentHTML;
+    
+        }catch(error){
+            console.log("Analytics not loaded:", error);
+        }
+    }
+    
+    loadAnalytics();
+    </script>
+    
+    <script async defer
+    src="https://maps.googleapis.com/maps/api/js?key=AIzaSyDms8HF9oyB6tRUAp7ZukLLkYhHWCjWYDY&callback=initMap">
+    </script>
+    
 </body>
 </html>
