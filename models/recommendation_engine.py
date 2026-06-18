@@ -1,4 +1,3 @@
-
 import sys
 from pathlib import Path
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -425,7 +424,8 @@ def recommend(patient):
         advocates.head(5),
         nearest_clinics.head(5),
         fallback_hospitals.head(5),
-        recommended_hospitals.head(5)
+        recommended_hospitals.head(5),
+        recommended_long_term.head[5]
     )
 
 
