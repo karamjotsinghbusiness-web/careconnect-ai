@@ -1473,6 +1473,7 @@ form.addEventListener("submit", async function(event){
         const nearestClinics = Array.isArray(data.nearest_clinics) ? data.nearest_clinics : [];
         const fallbackHospitals = Array.isArray(data.fallback_hospitals) ? data.fallback_hospitals : [];
         const recommendedHospitals = Array.isArray(data.recommended_hospitals) ? data.recommended_hospitals : [];
+        const longtermHospitals = Array.isArray(data.recommended_long_term) ? data.recommended_long_term : [];
 
         specialtyCard.innerText =
             `${specialty} (${confidence}% confidence)`;
@@ -1535,6 +1536,11 @@ form.addEventListener("submit", async function(event){
             advocates
         );
 
+        const longtermHTML = buildAdvocateCards(
+            longtermHospitals
+
+        );
+
         resultBox.innerHTML = `
             ${emergencyHTML}
 
@@ -1585,12 +1591,22 @@ form.addEventListener("submit", async function(event){
                 Professionals who can help with care coordination, resources, and support.
             </p>
             ${advocateHTML || "<p>No advocates found.</p>"}
+
+            <br>
+
+            <h3>Recommended Long Term Hospitals by Conditions</h3>
+            <p class="section-note">
+                Recommended Long Term Hospitals based off of condition-based quality, long-term support, and distance.
+            </p>
+            ${longtermHTML} || "<p>No Recommended Long Term Hospitals by Conditions found."</p>
         `;
 
         displayLocationsOnMap(
             providers,
             nearestClinics,
-            fallbackHospitals
+            fallbackHospitals,
+            recommendedHospitals,
+            longtermHTML
         );
 
         loadAnalytics();
