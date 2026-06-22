@@ -3,7 +3,7 @@ from openai import OpenAI
 
 
 client = OpenAI(
-    api_key=os.getenv("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")
+    api_key=os.getenv("OPENAI_API_KEY")
 )
 
 
