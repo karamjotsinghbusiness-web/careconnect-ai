@@ -615,6 +615,27 @@ select:focus{
     border-color:#ccfbf1;
 }
 
+.ai-explanation-card{
+    background:linear-gradient(135deg, #f8fbff, #ffffff);
+    border-left:5px solid var(--accent);
+    border:1px solid #dbeafe;
+    padding:18px;
+    border-radius:20px;
+    margin:18px 0;
+    color:#1e293b;
+}
+
+.ai-explanation-card h3{
+    color:#1d4ed8;
+    margin-bottom:8px;
+}
+
+.ai-explanation-card p{
+    line-height:1.65;
+    color:#334155;
+    font-weight:600;
+}
+
 .activity{
     list-style:none;
 }
@@ -1134,7 +1155,6 @@ select:focus{
             });
     
             const data = await response.json();
-    
             suggestionBox.innerHTML = "";
     
             if(!data.suggestions || data.suggestions.length === 0){
@@ -1185,6 +1205,16 @@ select:focus{
         return value;
     }
     
+
+    function escapeHTML(value){
+        return String(value ?? "")
+            .replaceAll("&", "&amp;")
+            .replaceAll("<", "&lt;")
+            .replaceAll(">", "&gt;")
+            .replaceAll('"', "&quot;")
+            .replaceAll("'", "&#039;");
+    }
+
     function getName(item){
         return (
             item.provider_name ||
@@ -1477,6 +1507,7 @@ select:focus{
                         <h3>Backend returned an error</h3>
                         <p>${data.message || "CareConnect AI could not process this request."}</p>
                         <p><b>Error:</b> ${data.error || "No error message returned."}</p>
+                        <p><b>AI Explanation:</b> ${data.ai_explanation || "AI explanation unavailable."}</p>
                         <p class="section-note">This usually means Railway is still running old backend code, app.py is not updated, or the updated dataset/model files were not deployed.</p>
                     </div>
                 `;
@@ -1487,6 +1518,8 @@ select:focus{
             const confidence = data.confidence ?? 0;
             const emergency = data.emergency || {};
             const message = data.message || "";
+            const aiExplanation = data.ai_explanation || "No AI explanation available.";
+            const safeAiExplanation = escapeHTML(aiExplanation).replaceAll("\n", "<br>");
     
             const providers = Array.isArray(data.providers) ? data.providers : [];
             const advocates = Array.isArray(data.advocates) ? data.advocates : [];
@@ -1573,6 +1606,11 @@ select:focus{
                     <p><b>Insurance:</b> ${patientData.insurance}</p>
                     <p><b>System Message:</b> ${message || "CareConnect AI completed the match."}</p>
                     <p><b>Saved:</b> Search saved to Firebase.</p>
+                </div>
+
+                <div class="ai-explanation-card">
+                    <h3>CareConnect AI Explanation</h3>
+                    <p>${safeAiExplanation}</p>
                 </div>
     
                 <h3>Closest Matching Providers</h3>
