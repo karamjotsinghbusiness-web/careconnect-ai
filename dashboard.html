@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -1215,6 +1216,16 @@ select:focus{
             .replaceAll("'", "&#039;");
     }
 
+    function formatAiText(value){
+        let safeText = escapeHTML(value);
+
+        safeText = safeText.replace(/\*\*(.*?)\*\*/g, "<strong>$1</strong>");
+
+        safeText = safeText.replaceAll("\n", "<br>");
+
+        return safeText;
+    }
+
     function getName(item){
         return (
             item.provider_name ||
@@ -1519,7 +1530,7 @@ select:focus{
             const emergency = data.emergency || {};
             const message = data.message || "";
             const aiExplanation = data.ai_explanation || "No AI explanation available.";
-            const safeAiExplanation = escapeHTML(aiExplanation).replaceAll("\n", "<br>");
+            const safeAiExplanation = formatAiText(aiExplanation);
     
             const providers = Array.isArray(data.providers) ? data.providers : [];
             const advocates = Array.isArray(data.advocates) ? data.advocates : [];
