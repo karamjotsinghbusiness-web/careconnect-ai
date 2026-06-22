@@ -12,7 +12,9 @@ sys.path.append(str(BASE_DIR))
 
 from flask import Flask, request, Response
 from flask_cors import CORS
+
 from models.recommendation_engine import recommend, get_condition_suggestions
+from models.ai_explainer import explain_recommendation
 
 
 app = Flask(__name__)
@@ -265,6 +267,18 @@ def get_recommendation():
         else:
             message = "This symptom was not found in the AI model, so nearby clinics, fallback care, hospital options, and long-term hospital options are shown instead."
 
+        try:
+            ai_explanation = explain_recommendation(
+                patient=patient,
+                specialty=specialty,
+                providers=providers,
+                advocates=advocates,
+                hospitals=recommended_hospitals,
+                hospices=None
+            )
+        except Exception:
+            ai_explanation = "CareConnect AI explanation is currently unavailable, but the provider recommendations were still created."
+
         search_history.append({
             "city": patient["city"],
             "condition": patient["condition"],
@@ -285,6 +299,7 @@ def get_recommendation():
             "success": True,
             "ai_matched": ai_matched,
             "message": message,
+            "ai_explanation": ai_explanation,
             "specialty": specialty,
             "confidence": confidence,
             "emergency": emergency,
@@ -302,6 +317,7 @@ def get_recommendation():
             "ai_matched": False,
             "message": "CareConnect AI could not process this request. Check app.py, recommendation_engine.py, provider_matcher.py, long_term.py, the Excel dataset, and Railway deployment.",
             "error": str(error),
+            "ai_explanation": "AI explanation is unavailable because the recommendation request failed.",
             "specialty": "No exact AI specialty match",
             "confidence": 0,
             "emergency": {
@@ -340,4 +356,3 @@ if __name__ == "__main__":
         port=5000,
         debug=True
     )
-
