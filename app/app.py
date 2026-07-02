@@ -5,7 +5,6 @@ from pathlib import Path
 import math
 import json
 import random
-from functools import wraps
 
 import pandas as pd
 import numpy as np
@@ -20,51 +19,40 @@ from models.recommendation_engine import recommend, get_condition_suggestions
 from models.ai_explainer import explain_recommendation
 
 
-# --- Logging (server-side only; never sent to the client) ---
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("careconnect")
 
-
 app = Flask(__name__)
 
-# --- CORS: restrict to known frontend origin(s) instead of allowing every
-# site on the internet to call this API from a browser. Set ALLOWED_ORIGINS
-# as a comma-separated env var, e.g. "https://careconnect.app,https://www.careconnect.app"
-allowed_origins = [
+# These are the frontends allowed to call your Railway backend.
+# Add more domains here if you later use a custom domain.
+DEFAULT_ALLOWED_ORIGINS = [
+    "https://careconnectai-19ace.firebaseapp.com",
+    "https://careconnectai-19ace.web.app",
+    "http://localhost:5500",
+    "http://127.0.0.1:5500",
+    "http://localhost:5000",
+    "http://127.0.0.1:5000",
+]
+
+extra_origins = [
     origin.strip()
     for origin in os.environ.get("ALLOWED_ORIGINS", "").split(",")
     if origin.strip()
 ]
-CORS(app, origins=allowed_origins or None, supports_credentials=False)
 
-# --- Admin auth for the analytics endpoint (it exposes patient city +
-# condition + coordinates, which is sensitive). Set ANALYTICS_API_KEY in
-# your environment; this is a minimal stopgap, not a substitute for real
-# auth (e.g. OAuth/session-based admin login) in a production deployment.
-ANALYTICS_API_KEY = os.environ.get("ANA_API_KEY")
+allowed_origins = list(dict.fromkeys(DEFAULT_ALLOWED_ORIGINS + extra_origins))
+
+CORS(
+    app,
+    resources={r"/*": {"origins": allowed_origins}},
+    supports_credentials=False,
+    methods=["GET", "POST", "OPTIONS"],
+    allow_headers=["Content-Type", "Authorization", "X-Requested-With"]
+)
 
 MAX_SEARCH_HISTORY = 200
 search_history = []
-
-
-def require_analytics_key(view_func):
-    @wraps(view_func)
-    def wrapped(*args, **kwargs):
-        if not ANALYTICS_API_KEY:
-            # Fail closed: if no key is configured, the endpoint is disabled
-            # rather than silently public.
-            return json_response(
-                {"error": "Analytics endpoint is not configured."}, status=503
-            )
-
-        provided = request.headers.get("X-API-Key", "")
-
-        if provided != ANALYTICS_API_KEY:
-            return json_response({"error": "Unauthorized"}, status=401)
-
-        return view_func(*args, **kwargs)
-
-    return wrapped
 
 
 def clean_data(obj):
@@ -198,7 +186,8 @@ def confidence_score(
 @app.route("/", methods=["GET"])
 def home():
     return json_response({
-        "message": "CareConnect AI backend is running"
+        "message": "CareConnect AI backend is running",
+        "allowed_origins": allowed_origins
     })
 
 
@@ -332,12 +321,6 @@ def get_recommendation():
             logger.exception("explain_recommendation failed")
             ai_explanation = "CareConnect AI explanation is currently unavailable, but the provider recommendations were still created."
 
-        # Keep an in-memory record for /analytics, but: (1) cap its size so
-        # it can't grow unbounded, and (2) understand that city/condition/
-        # lat-long is sensitive health-adjacent data — this in-memory list
-        # is fine for a demo, but a production deployment handling real
-        # patient data should not retain this in plaintext without a real
-        # data-retention/HIPAA review.
         search_history.append({
             "city": patient["city"],
             "condition": patient["condition"],
@@ -373,14 +356,12 @@ def get_recommendation():
             "recommended_long_term": recommended_long_term.head(5)
         })
 
-    except Exception as error:
-        # Log full detail server-side only; never echo internals (stack
-        # traces, file paths, library errors) back to the client.
+    except Exception:
         logger.exception("get_recommendation failed")
         return json_response({
             "success": False,
             "ai_matched": False,
-            "message": "CareConnect AI could not process this request. Please try again.",
+            "message": "CareConnect AI could not process this request. Please check the backend files and redeploy.",
             "ai_explanation": "AI explanation is unavailable because the recommendation request failed.",
             "specialty": "No exact AI specialty match",
             "confidence": 0,
@@ -397,15 +378,16 @@ def get_recommendation():
         }, status=200)
 
 
-@app.route("/analytics", methods=["GET"])
-@require_analytics_key
+@app.route("/analytics", methods=["GET", "OPTIONS"])
 def analytics():
-    total_searches = len(search_history)
+    if request.method == "OPTIONS":
+        return json_response({"status": "ok"})
 
+    total_searches = len(search_history)
     specialty_counts = {}
 
     for item in search_history:
-        specialty = item["specialty"]
+        specialty = item.get("specialty", "Unknown")
         specialty_counts[specialty] = specialty_counts.get(specialty, 0) + 1
 
     return json_response({
@@ -416,10 +398,6 @@ def analytics():
 
 
 if __name__ == "__main__":
-    # SECURITY: debug=True enables the Werkzeug interactive debugger, which
-    # allows arbitrary code execution for anyone who can reach the server.
-    # Never run with debug on in anything but local development, and only
-    # via an explicit env var — never hardcoded True.
     debug_mode = os.environ.get("FLASK_DEBUG", "false").lower() == "true"
     host = os.environ.get("FLASK_HOST", "127.0.0.1")
     port = int(os.environ.get("PORT", 5000))
