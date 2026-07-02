@@ -1,6 +1,10 @@
 import os
+import logging
+
 from openai import OpenAI
 
+
+logger = logging.getLogger("careconnect")
 
 client = OpenAI(
     api_key=os.getenv("OPENAI_API_KEY")
@@ -55,10 +59,16 @@ Write:
     try:
         response = client.responses.create(
             model="gpt-5.4",
-            input=prompt
+            input=prompt,
+            timeout=20
         )
 
         return response.output_text
 
-    except Exception as error:
-        return f"AI explanation is currently unavailable. Error: {str(error)}"
+    except Exception:
+        # Never surface str(error) to end users: it can leak API internals,
+        # request details, or (in some SDK error paths) partial key info.
+        # Log the real error server-side for debugging instead.
+        logger.exception("explain_recommendation OpenAI call failed")
+        return "CareConnect AI explanation is currently unavailable, but the provider recommendations were still created."
+
