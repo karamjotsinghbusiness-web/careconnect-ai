@@ -32,7 +32,7 @@ app = Flask(__name__)
 # as a comma-separated env var, e.g. "https://careconnect.app,https://www.careconnect.app"
 allowed_origins = [
     origin.strip()
-    for origin in os.env.get("ALLOWED_ORIGINS", "").split(",")
+    for origin in os.environ.get("ALLOWED_ORIGINS", "").split(",")
     if origin.strip()
 ]
 CORS(app, origins=allowed_origins or None, supports_credentials=False)
@@ -41,7 +41,7 @@ CORS(app, origins=allowed_origins or None, supports_credentials=False)
 # condition + coordinates, which is sensitive). Set ANALYTICS_API_KEY in
 # your environment; this is a minimal stopgap, not a substitute for real
 # auth (e.g. OAuth/session-based admin login) in a production deployment.
-ANALYTICS_API_KEY = os.env.get("ANA_API_KEY")
+ANALYTICS_API_KEY = os.environ.get("ANA_API_KEY")
 
 MAX_SEARCH_HISTORY = 200
 search_history = []
@@ -420,9 +420,9 @@ if __name__ == "__main__":
     # allows arbitrary code execution for anyone who can reach the server.
     # Never run with debug on in anything but local development, and only
     # via an explicit env var — never hardcoded True.
-    debug_mode = os.env.get("FLASK_DEBUG", "false").lower() == "true"
-    host = os.env.get("FLASK_HOST", "127.0.0.1")
-    port = int(os.env.get("PORT", 5000))
+    debug_mode = os.environ.get("FLASK_DEBUG", "false").lower() == "true"
+    host = os.environ.get("FLASK_HOST", "127.0.0.1")
+    port = int(os.environ.get("PORT", 5000))
 
     app.run(
         host=host,
