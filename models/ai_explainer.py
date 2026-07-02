@@ -6,31 +6,47 @@ from openai import OpenAI
 
 logger = logging.getLogger("careconnect")
 
-client = OpenAI(
-    api_key=os.getenv("OPENAI_API_KEY")
-)
+
+def _get_client():
+    api_key = os.getenv("OPENAI_API_KEY")
+
+    if not api_key:
+        return None
+
+    return OpenAI(api_key=api_key)
+
+
+def _safe_names(df, primary_col, fallback_col=None, limit=3):
+    if df is None or getattr(df, "empty", True):
+        return []
+
+    if primary_col in df.columns:
+        return df[primary_col].head(limit).astype(str).tolist()
+
+    if fallback_col and fallback_col in df.columns:
+        return df[fallback_col].head(limit).astype(str).tolist()
+
+    return []
 
 
 def explain_recommendation(patient, specialty, providers, advocates, hospitals, hospices=None):
     """
     Creates a simple explanation for the patient.
-    This does not diagnose. It only explains the care navigation results.
+    This is healthcare navigation only. It does not diagnose or tell users what treatment to take.
     """
+
+    client = _get_client()
+
+    if client is None:
+        return "CareConnect AI explanation is currently unavailable because the OpenAI API key is not configured on the backend."
 
     patient_city = patient.get("city", "Unknown")
     condition = patient.get("condition", "Unknown")
 
-    provider_names = []
-    if providers is not None and not providers.empty:
-        provider_names = providers.get("provider_name", providers.get("facility_name", [])).head(3).astype(str).tolist()
-
-    hospital_names = []
-    if hospitals is not None and not hospitals.empty:
-        hospital_names = hospitals.get("facility_name", []).head(3).astype(str).tolist()
-
-    hospice_names = []
-    if hospices is not None and not hospices.empty:
-        hospice_names = hospices.get("facility_name", []).head(3).astype(str).tolist()
+    provider_names = _safe_names(providers, "provider_name", "facility_name")
+    advocate_names = _safe_names(advocates, "advocate_name", "provider_name")
+    hospital_names = _safe_names(hospitals, "facility_name")
+    hospice_names = _safe_names(hospices, "facility_name")
 
     prompt = f"""
 You are CareConnect AI, a healthcare navigation assistant.
@@ -47,28 +63,27 @@ Patient condition/symptom: {condition}
 Predicted specialty: {specialty}
 
 Top providers: {provider_names}
+Top advocates: {advocate_names}
 Top hospitals: {hospital_names}
 Top hospice providers: {hospice_names}
 
-Write:
-1. A short explanation of what type of care may help
-2. Why these options appeared
-3. A reminder to contact a licensed healthcare professional
+Write the answer in this format:
+**What this means:** one short paragraph
+**Why these options appeared:** one short paragraph
+**Important reminder:** tell the user to contact a licensed healthcare professional for medical decisions
 """
 
     try:
         response = client.responses.create(
-            model="gpt-5.4",
+            model=os.getenv("OPENAI_MODEL", "gpt-4.1-mini"),
             input=prompt,
+            max_output_tokens=350,
             timeout=20
         )
 
         return response.output_text
 
     except Exception:
-        # Never surface str(error) to end users: it can leak API internals,
-        # request details, or (in some SDK error paths) partial key info.
-        # Log the real error server-side for debugging instead.
-        logger.exception("explain_recommendation OpenAI call failed")
+        logger.exception("OpenAI explanation failed")
         return "CareConnect AI explanation is currently unavailable, but the provider recommendations were still created."
 
