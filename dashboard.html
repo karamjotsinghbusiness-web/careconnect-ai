@@ -1073,7 +1073,11 @@ select:focus{
         link.addEventListener("click", closeSidebar);
     });
     
-    window.initMap = function(){
+    function createMap(){
+        if(!window.google || !window.google.maps){
+            return;
+        }
+
         map = new google.maps.Map(mapBox, {
             zoom: 7,
             center: {
@@ -1081,7 +1085,13 @@ select:focus{
                 lng: -92.1735
             }
         });
-    };
+    }
+
+    window.__careconnectInitMapCallback = createMap;
+
+    if(window.google && window.google.maps){
+        createMap();
+    }
     
     onAuthStateChanged(auth, async function(user){
         if(!user){
@@ -1214,16 +1224,6 @@ select:focus{
             .replaceAll(">", "&gt;")
             .replaceAll('"', "&quot;")
             .replaceAll("'", "&#039;");
-    }
-
-    function formatAiText(value){
-        let safeText = escapeHTML(value);
-
-        safeText = safeText.replace(/\*\*(.*?)\*\*/g, "<strong>$1</strong>");
-
-        safeText = safeText.replaceAll("\n", "<br>");
-
-        return safeText;
     }
 
     function getName(item){
@@ -1530,7 +1530,7 @@ select:focus{
             const emergency = data.emergency || {};
             const message = data.message || "";
             const aiExplanation = data.ai_explanation || "No AI explanation available.";
-            const safeAiExplanation = formatAiText(aiExplanation);
+            const safeAiExplanation = escapeHTML(aiExplanation).replaceAll("\n", "<br>");
     
             const providers = Array.isArray(data.providers) ? data.providers : [];
             const advocates = Array.isArray(data.advocates) ? data.advocates : [];
@@ -1694,17 +1694,27 @@ select:focus{
     async function loadAnalytics(){
         try{
             const response = await fetch(`${BACKEND_URL}/analytics`);
+
+            if(!response.ok){
+                console.log("Analytics request failed:", response.status);
+                return;
+            }
+
             const data = await response.json();
     
             const activityList = document.getElementById("activityList");
     
             let recentHTML = `
-                <li>Total Searches: ${data.total_searches}</li>
+                <li>Total Searches: ${data.total_searches || 0}</li>
             `;
     
-            data.recent_searches.forEach(search => {
+            const recentSearches = Array.isArray(data.recent_searches)
+                ? data.recent_searches
+                : [];
+
+            recentSearches.forEach(search => {
                 recentHTML += `
-                    <li>${search.condition} → ${search.specialty} (${search.confidence}%)</li>
+                    <li>${search.condition || "Unknown"} → ${search.specialty || "Unknown"} (${search.confidence || 0}%)</li>
                 `;
             });
     
@@ -1718,8 +1728,18 @@ select:focus{
     loadAnalytics();
     </script>
     
+    <script>
+    window.initMap = function(){
+        if(window.__careconnectInitMapCallback){
+            window.__careconnectInitMapCallback();
+        }else{
+            window.__careconnectMapReady = true;
+        }
+    };
+    </script>
+
     <script async defer
-    src="https://maps.googleapis.com/maps/api/js?key=AIzaSyDms8HF9oyB6tRUAp7ZukLLkYhHWCjWYDY&callback=initMap">
+    src="https://maps.googleapis.com/maps/api/js?loading=async&key=AIzaSyDms8HF9oyB6tRUAp7ZukLLkYhHWCjWYDY&callback=initMap">
     </script>
     
 </body>
