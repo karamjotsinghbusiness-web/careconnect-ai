@@ -183,6 +183,339 @@ def confidence_score(
     return min(score, 98)
 
 
+def _count_rows(value):
+    try:
+        return len(value)
+    except Exception:
+        return 0
+
+
+def _min_distance_from_frames(*frames):
+    distances = []
+
+    for frame in frames:
+        if frame is None or getattr(frame, "empty", True):
+            continue
+
+        if "distance_miles" not in frame.columns:
+            continue
+
+        values = pd.to_numeric(frame["distance_miles"], errors="coerce").dropna()
+
+        if len(values) > 0:
+            distances.append(float(values.min()))
+
+    if not distances:
+        return None
+
+    return min(distances)
+
+
+def build_access_score(
+    providers,
+    advocates,
+    nearest_clinics,
+    fallback_hospitals,
+    recommended_hospitals,
+    recommended_long_term,
+    specialty,
+    patient
+):
+    """
+    Business feature:
+    Creates a navigation/access score. This is not a medical score.
+    It only measures how many useful care-navigation options were found.
+    """
+
+    provider_count = _count_rows(providers)
+    advocate_count = _count_rows(advocates)
+    clinic_count = _count_rows(nearest_clinics)
+    fallback_count = _count_rows(fallback_hospitals)
+    hospital_count = _count_rows(recommended_hospitals)
+    long_term_count = _count_rows(recommended_long_term)
+
+    specialty_points = 0 if specialty == "No exact AI specialty match" else 25
+    provider_points = min(provider_count * 6, 20)
+    advocate_points = min(advocate_count * 5, 10)
+    clinic_points = min(clinic_count * 4, 12)
+    hospital_points = min(hospital_count * 4, 12)
+    fallback_points = min(fallback_count * 3, 8)
+    long_term_points = min(long_term_count * 3, 6)
+
+    nearest_distance = _min_distance_from_frames(
+        providers,
+        nearest_clinics,
+        fallback_hospitals,
+        recommended_hospitals,
+        recommended_long_term
+    )
+
+    if nearest_distance is None:
+        distance_points = 0
+        distance_label = "No distance data found"
+    elif nearest_distance <= 10:
+        distance_points = 15
+        distance_label = "Strong nearby access"
+    elif nearest_distance <= 25:
+        distance_points = 12
+        distance_label = "Good nearby access"
+    elif nearest_distance <= 50:
+        distance_points = 8
+        distance_label = "Moderate travel needed"
+    else:
+        distance_points = 4
+        distance_label = "Long travel may be needed"
+
+    total = (
+        specialty_points
+        + provider_points
+        + advocate_points
+        + clinic_points
+        + hospital_points
+        + fallback_points
+        + long_term_points
+        + distance_points
+    )
+
+    total = min(int(total), 100)
+
+    if total >= 80:
+        level = "Strong Access"
+    elif total >= 60:
+        level = "Moderate Access"
+    elif total >= 40:
+        level = "Limited Access"
+    else:
+        level = "Care Gap Risk"
+
+    return {
+        "overall": total,
+        "level": level,
+        "nearest_distance_miles": nearest_distance,
+        "distance_label": distance_label,
+        "breakdown": {
+            "specialty_match": specialty_points,
+            "matching_providers": provider_points,
+            "advocate_support": advocate_points,
+            "nearby_clinics": clinic_points,
+            "condition_based_hospitals": hospital_points,
+            "fallback_options": fallback_points,
+            "long_term_options": long_term_points,
+            "distance_access": distance_points
+        },
+        "summary": (
+            f"{level}: CareConnect found {provider_count} matching providers, "
+            f"{clinic_count} nearby clinic options, {hospital_count} condition-based hospital options, "
+            f"and {advocate_count} support resources."
+        )
+    }
+
+
+def build_care_gap(
+    providers,
+    advocates,
+    nearest_clinics,
+    fallback_hospitals,
+    recommended_hospitals,
+    recommended_long_term,
+    specialty
+):
+    """
+    Business feature:
+    Detects possible navigation/access gaps from the available public data.
+    This is not a diagnosis or medical shortage declaration.
+    """
+
+    reasons = []
+
+    if specialty == "No exact AI specialty match":
+        reasons.append("No exact specialty match was found from the AI model.")
+
+    if _count_rows(providers) == 0:
+        reasons.append("No matching specialty providers were found in the returned results.")
+
+    if _count_rows(nearest_clinics) == 0:
+        reasons.append("No nearby rural clinic results were found.")
+
+    if _count_rows(advocates) == 0:
+        reasons.append("No care support specialists or advocates were found.")
+
+    if _count_rows(recommended_hospitals) == 0 and _count_rows(fallback_hospitals) == 0:
+        reasons.append("No hospital or fallback care options were found in the returned results.")
+
+    nearest_distance = _min_distance_from_frames(
+        providers,
+        nearest_clinics,
+        fallback_hospitals,
+        recommended_hospitals,
+        recommended_long_term
+    )
+
+    if nearest_distance is not None and nearest_distance > 50:
+        reasons.append(f"The closest returned care option appears to be about {round(nearest_distance, 1)} miles away.")
+
+    return {
+        "detected": len(reasons) > 0,
+        "risk_level": "High" if len(reasons) >= 3 else "Medium" if len(reasons) >= 1 else "Low",
+        "reasons": reasons
+    }
+
+
+def build_care_route(patient, specialty, emergency, access_score, care_gap):
+    """
+    Business feature:
+    Routes the user to a safe navigation path.
+    This does not diagnose. It only organizes care options.
+    """
+
+    condition = str(patient.get("condition", "")).lower()
+
+    if emergency.get("is_emergency"):
+        route_type = "Emergency Warning Route"
+        urgency_level = "Emergency Warning"
+        steps = [
+            "Seek immediate medical help or call emergency services if symptoms are serious.",
+            "Use nearby hospitals or emergency care options first.",
+            "After urgent needs are addressed, review follow-up providers and support resources."
+        ]
+
+    elif any(word in condition for word in ["hospice", "terminal", "end-stage", "end stage", "comfort care"]):
+        route_type = "Serious Illness Support Route"
+        urgency_level = "Supportive Care"
+        steps = [
+            "Review hospice or serious illness support options.",
+            "Contact a licensed healthcare professional to discuss whether this type of support is appropriate.",
+            "Use advocate support if the family needs help understanding insurance, care planning, or next steps."
+        ]
+
+    elif any(word in condition for word in ["rehab", "long term", "long-term", "ventilator", "mobility", "wound"]):
+        route_type = "Long-Term Care Navigation Route"
+        urgency_level = "Planned / Ongoing Care"
+        steps = [
+            "Review long-term care hospital or rehabilitation-related options.",
+            "Compare distance and quality-related public measures.",
+            "Ask the facility about referral requirements, insurance, and availability."
+        ]
+
+    elif specialty != "No exact AI specialty match":
+        route_type = "Specialty Care Route"
+        urgency_level = "Routine or Soon Care"
+        steps = [
+            f"Start with the recommended specialty: {specialty}.",
+            "Check matching providers by distance and accepting-new-patient status.",
+            "Use hospital or clinic fallback options if specialty access is limited.",
+            "Use an advocate if scheduling, insurance, transportation, or coordination is difficult."
+        ]
+
+    else:
+        route_type = "Fallback Care Route"
+        urgency_level = "Navigation Needed"
+        steps = [
+            "No exact specialty match was found, so start with nearby clinics or primary care options.",
+            "Use fallback hospitals or clinics if there are limited provider matches.",
+            "Use support specialists or advocates to help decide where to call first."
+        ]
+
+    if care_gap.get("detected"):
+        steps.append("Care gap signals were detected, so consider contacting more than one option and asking about availability.")
+
+    return {
+        "route_type": route_type,
+        "urgency_level": urgency_level,
+        "steps": steps,
+        "access_level": access_score.get("level", "Unknown")
+    }
+
+
+def build_next_best_actions(patient, specialty, providers, advocates, nearest_clinics, recommended_hospitals, care_gap):
+    """
+    Business feature:
+    Gives practical next steps instead of only listing providers.
+    """
+
+    actions = []
+
+    if _count_rows(providers) > 0:
+        actions.append("Call the top matching provider and ask if they are accepting new patients.")
+
+    if _count_rows(nearest_clinics) > 0:
+        actions.append("If the provider wait time is too long, call the nearest clinic or health center as a backup option.")
+
+    if _count_rows(recommended_hospitals) > 0:
+        actions.append("Review the recommended hospital options if symptoms may need hospital-level care or testing.")
+
+    actions.append("Ask if your insurance is accepted before scheduling.")
+    actions.append("Ask whether a referral is required.")
+    actions.append("Write down your symptoms, medications, and questions before calling.")
+
+    if _count_rows(advocates) > 0:
+        actions.append("Contact a care support specialist if you need help with scheduling, insurance, transportation, or understanding options.")
+
+    if care_gap.get("detected"):
+        actions.append("Because access may be limited, contact at least two care options instead of waiting on only one.")
+
+    return actions[:7]
+
+
+def build_navigation_questions(patient):
+    """
+    Business feature:
+    Intake-style questions that make the app feel like a healthcare navigation system.
+    """
+
+    return [
+        "Are you trying to find a doctor, hospital, clinic, long-term care option, or support service?",
+        "Do you need help with insurance, transportation, scheduling, or understanding where to go?",
+        "Are you looking for the closest option, the highest-quality option, or the fastest available option?",
+        "Do you need telehealth, language support, or low-cost care?",
+        "Do you already have a referral, or do you need a provider that does not require one?"
+    ]
+
+
+def build_business_intelligence(
+    patient,
+    access_score,
+    care_gap,
+    providers,
+    advocates,
+    nearest_clinics,
+    recommended_hospitals
+):
+    """
+    Business feature:
+    A small patient-facing intelligence summary. Later this can power an admin/pilot dashboard.
+    """
+
+    signals = []
+
+    if access_score.get("overall", 0) < 60:
+        signals.append("This search may represent a limited-access navigation case.")
+
+    if _count_rows(providers) == 0:
+        signals.append("Specialty provider availability appears limited in the returned results.")
+
+    if _count_rows(advocates) == 0:
+        signals.append("Care coordination support may be limited for this search.")
+
+    if _count_rows(nearest_clinics) > 0:
+        signals.append("Nearby clinic fallback options were found.")
+
+    if _count_rows(recommended_hospitals) > 0:
+        signals.append("Condition-based hospital quality options were found.")
+
+    if not signals:
+        signals.append("CareConnect found multiple navigation options for this search.")
+
+    return {
+        "city": patient.get("city", ""),
+        "condition": patient.get("condition", ""),
+        "signals": signals,
+        "care_gap_detected": care_gap.get("detected", False),
+        "access_level": access_score.get("level", "Unknown")
+    }
+
+
+
 @app.route("/", methods=["GET"])
 def home():
     return json_response({
@@ -301,6 +634,57 @@ def get_recommendation():
             specialty
         )
 
+        access_score = build_access_score(
+            providers,
+            advocates,
+            nearest_clinics,
+            fallback_hospitals,
+            recommended_hospitals,
+            recommended_long_term,
+            specialty,
+            patient
+        )
+
+        care_gap = build_care_gap(
+            providers,
+            advocates,
+            nearest_clinics,
+            fallback_hospitals,
+            recommended_hospitals,
+            recommended_long_term,
+            specialty
+        )
+
+        care_route = build_care_route(
+            patient,
+            specialty,
+            emergency,
+            access_score,
+            care_gap
+        )
+
+        next_best_actions = build_next_best_actions(
+            patient,
+            specialty,
+            providers,
+            advocates,
+            nearest_clinics,
+            recommended_hospitals,
+            care_gap
+        )
+
+        navigation_questions = build_navigation_questions(patient)
+
+        business_intelligence = build_business_intelligence(
+            patient,
+            access_score,
+            care_gap,
+            providers,
+            advocates,
+            nearest_clinics,
+            recommended_hospitals
+        )
+
         ai_matched = specialty != "No exact AI specialty match"
 
         if ai_matched:
@@ -334,7 +718,10 @@ def get_recommendation():
             "recommended_hospital_count": len(recommended_hospitals),
             "recommended_long_term_count": len(recommended_long_term),
             "advocate_count": len(advocates),
-            "ai_matched": ai_matched
+            "ai_matched": ai_matched,
+            "access_score": access_score.get("overall"),
+            "access_level": access_score.get("level"),
+            "care_gap_detected": care_gap.get("detected")
         })
 
         if len(search_history) > MAX_SEARCH_HISTORY:
@@ -348,6 +735,12 @@ def get_recommendation():
             "specialty": specialty,
             "confidence": confidence,
             "emergency": emergency,
+            "access_score": access_score,
+            "care_gap": care_gap,
+            "care_route": care_route,
+            "next_best_actions": next_best_actions,
+            "navigation_questions": navigation_questions,
+            "business_intelligence": business_intelligence,
             "providers": providers.head(5),
             "advocates": advocates.head(5),
             "nearest_clinics": nearest_clinics.head(5),
@@ -368,6 +761,27 @@ def get_recommendation():
             "emergency": {
                 "is_emergency": False,
                 "message": "No emergency warning detected from the entered condition."
+            },
+            "access_score": {
+                "overall": 0,
+                "level": "Unavailable",
+                "breakdown": {},
+                "summary": "Access score unavailable because the recommendation request failed."
+            },
+            "care_gap": {
+                "detected": False,
+                "risk_level": "Unavailable",
+                "reasons": []
+            },
+            "care_route": {
+                "route_type": "Unavailable",
+                "urgency_level": "Unavailable",
+                "steps": []
+            },
+            "next_best_actions": [],
+            "navigation_questions": [],
+            "business_intelligence": {
+                "signals": []
             },
             "providers": [],
             "advocates": [],
@@ -407,4 +821,3 @@ if __name__ == "__main__":
         port=port,
         debug=debug_mode
     )
-
