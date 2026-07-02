@@ -41,7 +41,7 @@ CORS(app, origins=allowed_origins or None, supports_credentials=False)
 # condition + coordinates, which is sensitive). Set ANALYTICS_API_KEY in
 # your environment; this is a minimal stopgap, not a substitute for real
 # auth (e.g. OAuth/session-based admin login) in a production deployment.
-ANALYTICS_API_KEY = os.environ.get("ANA_API_KEY")
+ANALYTICS_API_KEY = os.env.get("ANA_API_KEY")
 
 MAX_SEARCH_HISTORY = 200
 search_history = []
