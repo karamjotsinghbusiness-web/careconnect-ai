@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -1521,18 +1522,29 @@ select:focus{
         return html;
     }
     
-    async function saveSearchToFirebase(searchData){
-        const user = auth.currentUser;
-    
-        await addDoc(collection(db, "patient_searches"), {
-            ...searchData,
-            userId:user ? user.uid : null,
-            userEmail:user ? user.email : null,
-            userName:currentUserData?.fullName || null,
-            createdAt:serverTimestamp()
-        });
+        async function saveSearchToFirebase(searchData){
+        try{
+            const user = auth.currentUser;
+
+            if(!user){
+                console.log("Search not saved because user is not signed in.");
+                return;
+            }
+
+            await addDoc(collection(db, "patient_searches"), {
+                ...searchData,
+                userId:user.uid,
+                userEmail:user.email,
+                userName:currentUserData?.fullName || null,
+                createdAt:serverTimestamp()
+            });
+
+        }catch(error){
+            console.log("Search was not saved to Firebase:", error.message);
+            // Do not throw this error. Recommendations should still display.
+        }
     }
-    
+
     form.addEventListener("submit", async function(event){
         event.preventDefault();
     
