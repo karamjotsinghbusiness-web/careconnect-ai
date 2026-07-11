@@ -1,99 +1,90 @@
-import json
-import logging
 import os
-import re
+import logging
 
-import pandas as pd
 from openai import OpenAI
 
 
 logger = logging.getLogger("careconnect")
 
 
-def _parse_json(text):
-    text = (text or "").strip()
-    text = re.sub(r"^```(?:json)?\s*|\s*```$", "", text, flags=re.IGNORECASE)
-    try:
-        value = json.loads(text)
-        return value if isinstance(value, dict) else {}
-    except (TypeError, json.JSONDecodeError):
-        logger.warning("OpenAI provider discovery returned invalid JSON")
-        return {}
-
-
-def _clean_rows(rows, kind, limit):
-    cleaned = []
-    for row in rows if isinstance(rows, list) else []:
-        if not isinstance(row, dict):
-            continue
-        name = str(row.get("name", "")).strip()
-        url = str(row.get("source_url", "")).strip()
-        if not name or not url.startswith("http"):
-            continue
-        cleaned.append({
-            ("provider_name" if kind == "provider" else "advocate_name"): name[:200],
-            "specialty" if kind == "provider" else "role": str(row.get("role_or_specialty", "Unknown"))[:150],
-            "city": str(row.get("city", ""))[:100],
-            "state": str(row.get("state", "MO"))[:30],
-            "phone": str(row.get("phone", "Not listed"))[:50],
-            "website": url[:500],
-            "source_url": url[:500],
-            "source": "OpenAI web search (supplemental)",
-            "verification_status": "Unverified — confirm directly before use",
-        })
-        if len(cleaned) >= limit:
-            break
-    return cleaned
-
-
-def discover_supplemental_resources(city, specialty, condition, limit=3):
-    """Find public listings to supplement, never replace, the local dataset."""
+def _get_client():
     api_key = os.getenv("OPENAI_API_KEY")
-    if not api_key or os.getenv("ENABLE_OPENAI_PROVIDER_SEARCH", "true").lower() != "true":
-        return pd.DataFrame(), pd.DataFrame()
+
+    if not api_key:
+        return None
+
+    # Recommendation requests must finish before the web worker timeout. If
+    # OpenAI is slow, the app falls back to its dataset response instead.
+    return OpenAI(api_key=api_key, max_retries=0)
+
+
+def _safe_names(df, primary_col, fallback_col=None, limit=3):
+    if df is None or getattr(df, "empty", True):
+        return []
+
+    if primary_col in df.columns:
+        return df[primary_col].head(limit).astype(str).tolist()
+
+    if fallback_col and fallback_col in df.columns:
+        return df[fallback_col].head(limit).astype(str).tolist()
+
+    return []
+
+
+def explain_recommendation(patient, specialty, providers, advocates, hospitals, hospices=None):
+    """
+    Creates a simple explanation for the patient.
+    This is healthcare navigation only. It does not diagnose or tell users what treatment to take.
+    """
+
+    client = _get_client()
+
+    if client is None:
+        return "CareConnect AI explanation is currently unavailable because the OpenAI API key is not configured on the backend."
+
+    patient_city = patient.get("city", "Unknown")
+    condition = patient.get("condition", "Unknown")
+
+    provider_names = _safe_names(providers, "provider_name", "facility_name")
+    advocate_names = _safe_names(advocates, "advocate_name", "provider_name")
+    hospital_names = _safe_names(hospitals, "facility_name")
+    hospice_names = _safe_names(hospices, "facility_name")
 
     prompt = f"""
-Search the public web for currently listed healthcare resources in or near {city}, Missouri.
-Find up to {limit} providers relevant to specialty: {specialty} (patient-entered concern: {condition})
-and up to {limit} patient advocates, care navigators, social workers, or nonprofit navigation services.
+You are CareConnect AI, a healthcare navigation assistant.
 
-Use only listings supported by a public source page. Do not invent names, phone numbers, or URLs.
-This is navigation information, not diagnosis. Return ONLY valid JSON with this exact shape:
-{{"providers":[{{"name":"","role_or_specialty":"","city":"","state":"MO","phone":"","source_url":""}}],
-"advocates":[{{"name":"","role_or_specialty":"","city":"","state":"MO","phone":"","source_url":""}}]}}
+Explain these results in simple English for a patient or family.
+Do not diagnose the patient.
+Do not say they definitely have a disease.
+Do not tell them what medicine to take.
+Do not replace a doctor.
+Only explain why these care options may be helpful.
+
+Patient city: {patient_city}
+Patient condition/symptom: {condition}
+Predicted specialty: {specialty}
+
+Top providers: {provider_names}
+Top advocates: {advocate_names}
+Top hospitals: {hospital_names}
+Top hospice providers: {hospice_names}
+
+Write the answer in this format:
+**What this means:** one short paragraph
+**Why these options appeared:** one short paragraph
+**Important reminder:** tell the user to contact a licensed healthcare professional for medical decisions
 """
 
     try:
-        response = OpenAI(api_key=api_key, max_retries=0).responses.create(
-            model=os.getenv("OPENAI_SEARCH_MODEL", "gpt-5-mini"),
-            tools=[{"type": "web_search"}],
+        response = client.responses.create(
+            model=os.getenv("OPENAI_MODEL", "gpt-4.1-mini"),
             input=prompt,
-            max_output_tokens=1400,
-            timeout=float(os.getenv("OPENAI_SEARCH_TIMEOUT_SECONDS", "8")),
+            max_output_tokens=350,
+            timeout=float(os.getenv("OPENAI_EXPLANATION_TIMEOUT_SECONDS", "8"))
         )
-        result = _parse_json(response.output_text)
-        providers = pd.DataFrame(_clean_rows(result.get("providers"), "provider", limit))
-        advocates = pd.DataFrame(_clean_rows(result.get("advocates"), "advocate", limit))
-        return providers, advocates
+
+        return response.output_text
+
     except Exception:
-        logger.exception("OpenAI supplemental provider search failed")
-        return pd.DataFrame(), pd.DataFrame()
-
-
-def merge_supplemental(dataset_rows, supplemental_rows, name_columns, limit=5):
-    dataset_rows = dataset_rows.copy()
-    supplemental_rows = supplemental_rows.copy()
-    if supplemental_rows.empty:
-        return dataset_rows.head(limit)
-
-    known = set()
-    for column in name_columns:
-        if column in dataset_rows.columns:
-            known.update(dataset_rows[column].fillna("").astype(str).str.lower().str.strip())
-
-    supplemental_name = next((c for c in name_columns if c in supplemental_rows.columns), None)
-    if supplemental_name:
-        supplemental_rows = supplemental_rows[
-            ~supplemental_rows[supplemental_name].fillna("").astype(str).str.lower().str.strip().isin(known)
-        ]
-    return pd.concat([dataset_rows, supplemental_rows], ignore_index=True, sort=False).head(limit)
+        logger.exception("OpenAI explanation failed")
+        return "CareConnect AI explanation is currently unavailable, but the provider recommendations were still created."
