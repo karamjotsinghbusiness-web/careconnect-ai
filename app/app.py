@@ -629,17 +629,39 @@ def get_recommendation():
         recommended_hospitals = as_dataframe(recommended_hospitals)
         recommended_long_term = as_dataframe(recommended_long_term)
 
-        supplemental_providers, supplemental_advocates = discover_supplemental_resources(
+        supplemental_limit = max(
+            0, min(safe_int(os.environ.get("OPENAI_SEARCH_RESULT_LIMIT", 3), default=3), 5)
+        )
+        (
+            supplemental_providers,
+            supplemental_clinics,
+            supplemental_advocates,
+        ) = discover_supplemental_resources(
             city=patient["city"],
             specialty=specialty,
             condition=patient["condition"],
-            limit=safe_int(os.environ.get("OPENAI_SEARCH_RESULT_LIMIT", 3), default=3),
+            limit=supplemental_limit,
         )
         providers = merge_supplemental(
-            providers, supplemental_providers, ("provider_name", "facility_name"), limit=5
+            providers,
+            supplemental_providers,
+            ("provider_name", "facility_name"),
+            dataset_limit=5,
+            supplemental_limit=supplemental_limit,
+        )
+        nearest_clinics = merge_supplemental(
+            nearest_clinics,
+            supplemental_clinics,
+            ("clinic_name", "provider_name", "facility_name"),
+            dataset_limit=5,
+            supplemental_limit=supplemental_limit,
         )
         advocates = merge_supplemental(
-            advocates, supplemental_advocates, ("advocate_name", "provider_name"), limit=5
+            advocates,
+            supplemental_advocates,
+            ("advocate_name", "provider_name"),
+            dataset_limit=5,
+            supplemental_limit=supplemental_limit,
         )
 
         emergency = detect_emergency(patient["condition"])
@@ -758,9 +780,9 @@ def get_recommendation():
             "next_best_actions": next_best_actions,
             "navigation_questions": navigation_questions,
             "business_intelligence": business_intelligence,
-            "providers": providers.head(5),
-            "advocates": advocates.head(5),
-            "nearest_clinics": nearest_clinics.head(5),
+            "providers": providers,
+            "advocates": advocates,
+            "nearest_clinics": nearest_clinics,
             "fallback_hospitals": fallback_hospitals.head(5),
             "recommended_hospitals": recommended_hospitals.head(5),
             "recommended_long_term": recommended_long_term.head(5)
