@@ -64,12 +64,12 @@ This is navigation information, not diagnosis. Return ONLY valid JSON with this 
 """
 
     try:
-        response = OpenAI(api_key=api_key).responses.create(
+        response = OpenAI(api_key=api_key, max_retries=0).responses.create(
             model=os.getenv("OPENAI_SEARCH_MODEL", "gpt-5-mini"),
             tools=[{"type": "web_search"}],
             input=prompt,
             max_output_tokens=1400,
-            timeout=30,
+            timeout=float(os.getenv("OPENAI_SEARCH_TIMEOUT_SECONDS", "8")),
         )
         result = _parse_json(response.output_text)
         providers = pd.DataFrame(_clean_rows(result.get("providers"), "provider", limit))
