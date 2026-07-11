@@ -81,8 +81,14 @@ This is navigation information, not diagnosis. Return ONLY valid JSON with this 
 """
 
     try:
+        search_model = os.getenv("OPENAI_SEARCH_MODEL", "gpt-5.4-mini").strip()
+        # Older setup instructions used gpt-5-mini. Use the current fast model
+        # that explicitly supports Responses API web search.
+        if search_model == "gpt-5-mini":
+            search_model = "gpt-5.4-mini"
+
         response = OpenAI(api_key=api_key, max_retries=0).responses.create(
-            model=os.getenv("OPENAI_SEARCH_MODEL", "gpt-5-mini"),
+            model=search_model,
             tools=[{"type": "web_search"}],
             input=prompt,
             max_output_tokens=1400,
