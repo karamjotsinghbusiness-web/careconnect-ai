@@ -18,7 +18,12 @@ from flask_cors import CORS
 from models.recommendation_engine import recommend, get_condition_suggestions
 from models.ai_explainer import explain_recommendation
 from models.provider_discovery import discover_supplemental_resources, merge_supplemental
-from history_store import add_search, history_summary, initialize_history_store
+try:
+    # Railway/Gunicorn loads this file as the app.app package module.
+    from app.history_store import add_search, history_summary, initialize_history_store
+except ImportError:
+    # Keep direct local execution (`python app/app.py`) working too.
+    from history_store import add_search, history_summary, initialize_history_store
 
 
 logging.basicConfig(level=logging.INFO)
