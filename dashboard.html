@@ -2137,6 +2137,12 @@ select:focus{
             const city = getCity(item);
             const distance = item.distance_miles || "Unknown";
             const mapsUrl = getMapsUrl(item);
+            const sourceLink = item.source_url
+                ? `<a href="${escapeHTML(item.source_url)}" target="_blank" rel="noopener noreferrer">View public source</a>`
+                : "";
+            const verification = item.verification_status
+                ? `<p><b>Status:</b> ${escapeHTML(item.verification_status)}</p>`
+                : "";
     
             html += `
                 <div class="${cardClass}">
@@ -2147,7 +2153,9 @@ select:focus{
                     <p><b>Credential:</b> ${item.credential || "N/A"}</p>
                     <p><b>Distance:</b> ${distance} miles</p>
                     <p><b>Accepting New Patients:</b> ${item.accepting_new_patients || "Unknown"}</p>
+                    ${verification}
                     <a href="${mapsUrl}" target="_blank">Open directions</a>
+                    ${sourceLink}
                 </div>
             `;
         });
@@ -2159,12 +2167,20 @@ select:focus{
         let html = "";
     
         advocates.forEach(advocate => {
+            const sourceLink = advocate.source_url
+                ? `<a href="${escapeHTML(advocate.source_url)}" target="_blank" rel="noopener noreferrer">View public source</a>`
+                : "";
+            const verification = advocate.verification_status
+                ? `<p><b>Status:</b> ${escapeHTML(advocate.verification_status)}</p>`
+                : "";
             html += `
                 <div class="advocate-card">
                     <h4>${advocate.advocate_name || advocate.provider_name || advocate.name || "Unknown Advocate"}</h4>
                     <p><b>Role:</b> ${advocate.role || advocate.specialty || "N/A"}</p>
                     <p><b>City:</b> ${advocate.city || "N/A"}</p>
                     <p><b>Phone:</b> ${advocate.phone || "N/A"}</p>
+                    ${verification}
+                    ${sourceLink}
                 </div>
             `;
         });
