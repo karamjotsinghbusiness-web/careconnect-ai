@@ -13,6 +13,15 @@ logger = logging.getLogger("careconnect")
 def _parse_json(text):
     text = (text or "").strip()
     text = re.sub(r"^```(?:json)?\s*|\s*```$", "", text, flags=re.IGNORECASE)
+
+    # Web-search answers can wrap the requested JSON in a short sentence or
+    # citation block. Extract the outer JSON object instead of throwing away
+    # otherwise valid provider results.
+    first_brace = text.find("{")
+    last_brace = text.rfind("}")
+    if first_brace >= 0 and last_brace > first_brace:
+        text = text[first_brace:last_brace + 1]
+
     try:
         value = json.loads(text)
         return value if isinstance(value, dict) else {}
@@ -77,7 +86,7 @@ This is navigation information, not diagnosis. Return ONLY valid JSON with this 
             tools=[{"type": "web_search"}],
             input=prompt,
             max_output_tokens=1400,
-            timeout=float(os.getenv("OPENAI_SEARCH_TIMEOUT_SECONDS", "12")),
+            timeout=float(os.getenv("OPENAI_SEARCH_TIMEOUT_SECONDS", "25")),
         )
         result = _parse_json(response.output_text)
         providers = pd.DataFrame(_clean_rows(result.get("providers"), "provider", limit))
