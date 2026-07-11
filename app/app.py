@@ -17,6 +17,8 @@ from flask_cors import CORS
 
 from models.recommendation_engine import recommend, get_condition_suggestions
 from models.ai_explainer import explain_recommendation
+from models.provider_discovery import discover_supplemental_resources, merge_supplemental
+from history_store import add_search, history_summary, initialize_history_store
 
 
 logging.basicConfig(level=logging.INFO)
@@ -52,7 +54,7 @@ CORS(
 )
 
 MAX_SEARCH_HISTORY = 200
-search_history = []
+initialize_history_store()
 
 
 def clean_data(obj):
@@ -622,6 +624,19 @@ def get_recommendation():
         recommended_hospitals = as_dataframe(recommended_hospitals)
         recommended_long_term = as_dataframe(recommended_long_term)
 
+        supplemental_providers, supplemental_advocates = discover_supplemental_resources(
+            city=patient["city"],
+            specialty=specialty,
+            condition=patient["condition"],
+            limit=safe_int(os.environ.get("OPENAI_SEARCH_RESULT_LIMIT", 3), default=3),
+        )
+        providers = merge_supplemental(
+            providers, supplemental_providers, ("provider_name", "facility_name"), limit=5
+        )
+        advocates = merge_supplemental(
+            advocates, supplemental_advocates, ("advocate_name", "provider_name"), limit=5
+        )
+
         emergency = detect_emergency(patient["condition"])
 
         confidence = confidence_score(
@@ -705,7 +720,7 @@ def get_recommendation():
             logger.exception("explain_recommendation failed")
             ai_explanation = "CareConnect AI explanation is currently unavailable, but the provider recommendations were still created."
 
-        search_history.append({
+        add_search({
             "city": patient["city"],
             "condition": patient["condition"],
             "specialty": specialty,
@@ -722,10 +737,7 @@ def get_recommendation():
             "access_score": access_score.get("overall"),
             "access_level": access_score.get("level"),
             "care_gap_detected": care_gap.get("detected")
-        })
-
-        if len(search_history) > MAX_SEARCH_HISTORY:
-            del search_history[: len(search_history) - MAX_SEARCH_HISTORY]
+        }, max_records=MAX_SEARCH_HISTORY)
 
         return json_response({
             "success": True,
@@ -797,18 +809,7 @@ def analytics():
     if request.method == "OPTIONS":
         return json_response({"status": "ok"})
 
-    total_searches = len(search_history)
-    specialty_counts = {}
-
-    for item in search_history:
-        specialty = item.get("specialty", "Unknown")
-        specialty_counts[specialty] = specialty_counts.get(specialty, 0) + 1
-
-    return json_response({
-        "total_searches": total_searches,
-        "specialty_counts": specialty_counts,
-        "recent_searches": search_history[-5:]
-    })
+    return json_response(history_summary(recent_limit=5))
 
 
 if __name__ == "__main__":
