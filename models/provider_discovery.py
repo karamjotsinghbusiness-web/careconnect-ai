@@ -1,0 +1,99 @@
+import json
+import logging
+import os
+import re
+
+import pandas as pd
+from openai import OpenAI
+
+
+logger = logging.getLogger("careconnect")
+
+
+def _parse_json(text):
+    text = (text or "").strip()
+    text = re.sub(r"^```(?:json)?\s*|\s*```$", "", text, flags=re.IGNORECASE)
+    try:
+        value = json.loads(text)
+        return value if isinstance(value, dict) else {}
+    except (TypeError, json.JSONDecodeError):
+        logger.warning("OpenAI provider discovery returned invalid JSON")
+        return {}
+
+
+def _clean_rows(rows, kind, limit):
+    cleaned = []
+    for row in rows if isinstance(rows, list) else []:
+        if not isinstance(row, dict):
+            continue
+        name = str(row.get("name", "")).strip()
+        url = str(row.get("source_url", "")).strip()
+        if not name or not url.startswith("http"):
+            continue
+        cleaned.append({
+            ("provider_name" if kind == "provider" else "advocate_name"): name[:200],
+            "specialty" if kind == "provider" else "role": str(row.get("role_or_specialty", "Unknown"))[:150],
+            "city": str(row.get("city", ""))[:100],
+            "state": str(row.get("state", "MO"))[:30],
+            "phone": str(row.get("phone", "Not listed"))[:50],
+            "website": url[:500],
+            "source_url": url[:500],
+            "source": "OpenAI web search (supplemental)",
+            "verification_status": "Unverified — confirm directly before use",
+        })
+        if len(cleaned) >= limit:
+            break
+    return cleaned
+
+
+def discover_supplemental_resources(city, specialty, condition, limit=3):
+    """Find public listings to supplement, never replace, the local dataset."""
+    api_key = os.getenv("OPENAI_API_KEY")
+    if not api_key or os.getenv("ENABLE_OPENAI_PROVIDER_SEARCH", "true").lower() != "true":
+        return pd.DataFrame(), pd.DataFrame()
+
+    prompt = f"""
+Search the public web for currently listed healthcare resources in or near {city}, Missouri.
+Find up to {limit} providers relevant to specialty: {specialty} (patient-entered concern: {condition})
+and up to {limit} patient advocates, care navigators, social workers, or nonprofit navigation services.
+
+Use only listings supported by a public source page. Do not invent names, phone numbers, or URLs.
+This is navigation information, not diagnosis. Return ONLY valid JSON with this exact shape:
+{{"providers":[{{"name":"","role_or_specialty":"","city":"","state":"MO","phone":"","source_url":""}}],
+"advocates":[{{"name":"","role_or_specialty":"","city":"","state":"MO","phone":"","source_url":""}}]}}
+"""
+
+    try:
+        response = OpenAI(api_key=api_key).responses.create(
+            model=os.getenv("OPENAI_SEARCH_MODEL", "gpt-5-mini"),
+            tools=[{"type": "web_search"}],
+            input=prompt,
+            max_output_tokens=1400,
+            timeout=30,
+        )
+        result = _parse_json(response.output_text)
+        providers = pd.DataFrame(_clean_rows(result.get("providers"), "provider", limit))
+        advocates = pd.DataFrame(_clean_rows(result.get("advocates"), "advocate", limit))
+        return providers, advocates
+    except Exception:
+        logger.exception("OpenAI supplemental provider search failed")
+        return pd.DataFrame(), pd.DataFrame()
+
+
+def merge_supplemental(dataset_rows, supplemental_rows, name_columns, limit=5):
+    dataset_rows = dataset_rows.copy()
+    supplemental_rows = supplemental_rows.copy()
+    if supplemental_rows.empty:
+        return dataset_rows.head(limit)
+
+    known = set()
+    for column in name_columns:
+        if column in dataset_rows.columns:
+            known.update(dataset_rows[column].fillna("").astype(str).str.lower().str.strip())
+
+    supplemental_name = next((c for c in name_columns if c in supplemental_rows.columns), None)
+    if supplemental_name:
+        supplemental_rows = supplemental_rows[
+            ~supplemental_rows[supplemental_name].fillna("").astype(str).str.lower().str.strip().isin(known)
+        ]
+    return pd.concat([dataset_rows, supplemental_rows], ignore_index=True, sort=False).head(limit)
