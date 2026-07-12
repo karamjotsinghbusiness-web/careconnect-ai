@@ -1,8 +1,9 @@
 import functools
+import json
 import os
 
 import firebase_admin
-from firebase_admin import auth
+from firebase_admin import auth, credentials
 from flask import g, request
 
 try:
@@ -17,11 +18,23 @@ def env_true(name, default="false"):
 
 def initialize_firebase_admin():
     if not firebase_admin._apps:
-        # Uses Application Default Credentials. On Railway, configure
-        # GOOGLE_APPLICATION_CREDENTIALS to a mounted service-account secret.
-        firebase_admin.initialize_app(options={
-            "projectId": os.environ.get("FIREBASE_PROJECT_ID", "careconnectai-19ace")
-        })
+        project_id = os.environ.get("FIREBASE_PROJECT_ID", "careconnectai-19ace")
+        options = {"projectId": project_id}
+        service_account_json = os.environ.get("FIREBASE_SERVICE_ACCOUNT_JSON", "").strip()
+
+        if service_account_json:
+            service_account = json.loads(service_account_json)
+            credential_project = service_account.get("project_id")
+            if credential_project != project_id:
+                raise ValueError(
+                    "FIREBASE_SERVICE_ACCOUNT_JSON project_id does not match FIREBASE_PROJECT_ID"
+                )
+            firebase_admin.initialize_app(credentials.Certificate(service_account), options=options)
+            return
+
+        # Local development and secret-file deployments may use Application
+        # Default Credentials through GOOGLE_APPLICATION_CREDENTIALS.
+        firebase_admin.initialize_app(options=options)
 
 
 def real_phi_enabled():
