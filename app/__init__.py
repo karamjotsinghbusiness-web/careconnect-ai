@@ -1,0 +1,1 @@
+"""CareConnect Flask application package."""

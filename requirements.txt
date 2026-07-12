@@ -1,0 +1,10 @@
+flask
+flask-cors
+gunicorn
+pandas
+numpy
+scikit-learn==1.6.0
+joblib
+openpyxl
+openai
+firebase-admin
