@@ -166,7 +166,48 @@ def send_security_alert(event_id, event_type, severity, endpoint, details):
         "notice": "No PHI or request body is included. Review the protected security event console.",
     }
     _send_webhook(payload)
-    _send_email(payload)
+    if _emailjs_configured():
+        _send_emailjs(payload)
+    else:
+        _send_email(payload)
+
+
+def _emailjs_configured():
+    return all(
+        os.environ.get(name, "").strip()
+        for name in ("EMAILJS_SERVICE_ID", "EMAILJS_TEMPLATE_ID", "EMAILJS_PUBLIC_KEY")
+    )
+
+
+def _send_emailjs(payload):
+    request_data = {
+        "service_id": os.environ["EMAILJS_SERVICE_ID"].strip(),
+        "template_id": os.environ["EMAILJS_TEMPLATE_ID"].strip(),
+        "user_id": os.environ["EMAILJS_PUBLIC_KEY"].strip(),
+        "template_params": {
+            "event_id": str(payload["event_id"]),
+            "event_type": payload["event_type"],
+            "severity": payload["severity"],
+            "endpoint": payload["endpoint"],
+            "timestamp": payload["timestamp"],
+            "details": json.dumps(_safe_details(payload.get("details"))),
+            "notice": payload["notice"],
+        },
+    }
+    private_key = os.environ.get("EMAILJS_PRIVATE_KEY", "").strip()
+    if private_key:
+        request_data["accessToken"] = private_key
+
+    request = urllib.request.Request(
+        "https://api.emailjs.com/api/v1.0/email/send",
+        data=json.dumps(request_data).encode(),
+        headers={"Content-Type": "application/json", "User-Agent": "CareConnect-Security-Monitor/1.0"},
+        method="POST",
+    )
+    try:
+        urllib.request.urlopen(request, timeout=10).read()
+    except Exception as exc:
+        print(f"Security alert EmailJS delivery failed: {type(exc).__name__}", flush=True)
 
 
 def _send_webhook(payload):
