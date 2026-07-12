@@ -1,3 +1,4 @@
+import base64
 import functools
 import json
 import os
@@ -20,10 +21,23 @@ def initialize_firebase_admin():
     if not firebase_admin._apps:
         project_id = os.environ.get("FIREBASE_PROJECT_ID", "careconnectai-19ace")
         options = {"projectId": project_id}
+        service_account_base64 = os.environ.get("FIREBASE_SERVICE_ACCOUNT_BASE64", "").strip()
         service_account_json = os.environ.get("FIREBASE_SERVICE_ACCOUNT_JSON", "").strip()
 
-        if service_account_json:
-            service_account = json.loads(service_account_json)
+        if service_account_base64 or service_account_json:
+            try:
+                if service_account_base64:
+                    decoded = base64.b64decode(service_account_base64, validate=True).decode("utf-8")
+                    service_account = json.loads(decoded)
+                else:
+                    service_account = json.loads(service_account_json)
+            except (ValueError, UnicodeDecodeError, json.JSONDecodeError):
+                # Keep the service available but authentication closed. Token
+                # verification will fail without valid server credentials.
+                print("Firebase Admin credential is malformed; authentication remains unavailable.", flush=True)
+                firebase_admin.initialize_app(options=options)
+                return
+
             credential_project = service_account.get("project_id")
             if credential_project != project_id:
                 raise ValueError(
