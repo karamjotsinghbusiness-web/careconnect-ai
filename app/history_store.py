@@ -35,7 +35,16 @@ def initialize_history_store():
 
 
 def add_search(payload, max_records=200):
-    serialized = json.dumps(payload, allow_nan=False)
+    # Store aggregate navigation metrics only. Never persist symptoms,
+    # coordinates, names, emails, user IDs, or free-text input here.
+    allowed_fields = {
+        "specialty", "provider_count", "nearest_clinic_count",
+        "fallback_hospital_count", "recommended_hospital_count",
+        "recommended_long_term_count", "advocate_count", "ai_matched",
+        "access_level", "care_gap_detected",
+    }
+    minimized = {key: payload.get(key) for key in allowed_fields if key in payload}
+    serialized = json.dumps(minimized, allow_nan=False)
     with _connect() as connection:
         connection.execute(
             "INSERT INTO search_history (payload) VALUES (?)",

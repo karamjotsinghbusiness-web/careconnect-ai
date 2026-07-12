@@ -24,12 +24,43 @@ try:
 except ImportError:
     # Keep direct local execution (`python app/app.py`) working too.
     from history_store import add_search, history_summary, initialize_history_store
+try:
+    from app.security import (
+        initialize_firebase_admin,
+        openai_phi_enabled,
+        real_phi_enabled,
+        require_admin,
+        require_firebase_user,
+    )
+except ImportError:
+    from security import (
+        initialize_firebase_admin,
+        openai_phi_enabled,
+        real_phi_enabled,
+        require_admin,
+        require_firebase_user,
+    )
+try:
+    from app.security_events import (
+        initialize_security_events,
+        recent_events,
+        record_security_event,
+        security_summary,
+    )
+except ImportError:
+    from security_events import (
+        initialize_security_events,
+        recent_events,
+        record_security_event,
+        security_summary,
+    )
 
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("careconnect")
 
 app = Flask(__name__)
+app.config["MAX_CONTENT_LENGTH"] = 16 * 1024
 
 # These are the frontends allowed to call your Railway backend.
 # Add more domains here if you later use a custom domain.
@@ -60,6 +91,14 @@ CORS(
 
 MAX_SEARCH_HISTORY = 200
 initialize_history_store()
+initialize_security_events()
+initialize_firebase_admin()
+
+if os.environ.get("ALLOW_REAL_PHI", "false").lower() == "true" and not real_phi_enabled():
+    record_security_event(
+        "unsafe_phi_configuration", "critical", "startup",
+        details={"configuration": "ALLOW_REAL_PHI requested without all required BAA confirmations"},
+    )
 
 
 def clean_data(obj):
@@ -103,6 +142,17 @@ def json_response(data, status=200):
         status=status,
         mimetype="application/json"
     )
+
+
+@app.after_request
+def add_security_headers(response):
+    response.headers["Cache-Control"] = "no-store"
+    response.headers["Pragma"] = "no-cache"
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["Referrer-Policy"] = "no-referrer"
+    response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
+    return response
 
 
 def as_dataframe(value):
@@ -527,11 +577,39 @@ def build_business_intelligence(
 def home():
     return json_response({
         "message": "CareConnect AI backend is running",
-        "allowed_origins": allowed_origins
+        "real_phi_enabled": real_phi_enabled(),
+        "openai_phi_enabled": openai_phi_enabled()
     })
 
 
+@app.route("/security/status", methods=["GET", "OPTIONS"])
+@require_admin(json_response)
+def security_status():
+    if request.method == "OPTIONS":
+        return json_response({"status": "ok"})
+    return json_response({
+        "success": True,
+        "deployment_version": os.environ.get("DEPLOYMENT_VERSION", "unknown"),
+        "real_phi_enabled": real_phi_enabled(),
+        "openai_phi_enabled": openai_phi_enabled(),
+        "alerts_configured": bool(
+            os.environ.get("SECURITY_ALERT_WEBHOOK_URL")
+            or os.environ.get("SECURITY_ALERT_EMAILS")
+        ),
+        "events": security_summary(),
+    })
+
+
+@app.route("/security/events", methods=["GET", "OPTIONS"])
+@require_admin(json_response)
+def security_event_list():
+    if request.method == "OPTIONS":
+        return json_response({"status": "ok"})
+    return json_response({"success": True, "events": recent_events(request.args.get("limit", 50))})
+
+
 @app.route("/symptom_suggestions", methods=["POST", "OPTIONS"])
+@require_firebase_user(json_response)
 def symptom_suggestions():
     if request.method == "OPTIONS":
         return json_response({"status": "ok"})
@@ -560,6 +638,7 @@ def symptom_suggestions():
 
 
 @app.route("/recommend", methods=["POST", "OPTIONS"])
+@require_firebase_user(json_response)
 def get_recommendation():
     if request.method == "OPTIONS":
         return json_response({"status": "ok"})
@@ -567,14 +646,24 @@ def get_recommendation():
     try:
         data = request.get_json(silent=True) or {}
 
+        demo_only = data.get("demo_only_confirmed") is True
+        if not real_phi_enabled() and not demo_only:
+            return json_response({
+                "success": False,
+                "message": (
+                    "Real patient information is disabled until hosting and Google BAAs "
+                    "are confirmed. Use fictional demonstration data only."
+                )
+            }, status=403)
+
         patient = {
             "age": safe_int(data.get("age", 0), default=0),
             "gender": str(data.get("gender", ""))[:50],
             "city": str(data.get("city", ""))[:100],
             "insurance": str(data.get("insurance", ""))[:100],
             "condition": str(data.get("condition", ""))[:300],
-            "latitude": data.get("latitude"),
-            "longitude": data.get("longitude")
+            "latitude": data.get("latitude") if real_phi_enabled() else None,
+            "longitude": data.get("longitude") if real_phi_enabled() else None
         }
 
         result = recommend(patient)
@@ -636,11 +725,15 @@ def get_recommendation():
             supplemental_providers,
             supplemental_clinics,
             supplemental_advocates,
-        ) = discover_supplemental_resources(
-            city=patient["city"],
-            specialty=specialty,
-            condition=patient["condition"],
-            limit=supplemental_limit,
+        ) = (
+            discover_supplemental_resources(
+                city=patient["city"],
+                specialty=specialty,
+                condition=patient["condition"],
+                limit=supplemental_limit,
+            )
+            if (demo_only or openai_phi_enabled())
+            else (pd.DataFrame(), pd.DataFrame(), pd.DataFrame())
         )
         providers = merge_supplemental(
             providers,
@@ -735,6 +828,8 @@ def get_recommendation():
             message = "This symptom was not found in the AI model, so nearby clinics, fallback care, hospital options, and long-term hospital options are shown instead."
 
         try:
+            if not (demo_only or openai_phi_enabled()):
+                raise RuntimeError("OpenAI PHI processing is disabled until BAA controls are confirmed")
             ai_explanation = explain_recommendation(
                 patient=patient,
                 specialty=specialty,
@@ -748,12 +843,7 @@ def get_recommendation():
             ai_explanation = "CareConnect AI explanation is currently unavailable, but the provider recommendations were still created."
 
         add_search({
-            "city": patient["city"],
-            "condition": patient["condition"],
             "specialty": specialty,
-            "confidence": confidence,
-            "latitude": patient["latitude"],
-            "longitude": patient["longitude"],
             "provider_count": len(providers),
             "nearest_clinic_count": len(nearest_clinics),
             "fallback_hospital_count": len(fallback_hospitals),
@@ -832,6 +922,7 @@ def get_recommendation():
 
 
 @app.route("/analytics", methods=["GET", "OPTIONS"])
+@require_admin(json_response)
 def analytics():
     if request.method == "OPTIONS":
         return json_response({"status": "ok"})
