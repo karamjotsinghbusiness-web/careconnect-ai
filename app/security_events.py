@@ -6,6 +6,7 @@ import smtplib
 import sqlite3
 import threading
 import time
+import urllib.error
 import urllib.request
 from datetime import datetime, timezone
 from email.message import EmailMessage
@@ -206,6 +207,15 @@ def _send_emailjs(payload):
     )
     try:
         urllib.request.urlopen(request, timeout=10).read()
+    except urllib.error.HTTPError as exc:
+        try:
+            message = exc.read(500).decode("utf-8", errors="replace").replace("\n", " ").strip()
+        except Exception:
+            message = "response unavailable"
+        print(
+            f"Security alert EmailJS delivery failed: HTTP {exc.code} {message[:300]}",
+            flush=True,
+        )
     except Exception as exc:
         print(f"Security alert EmailJS delivery failed: {type(exc).__name__}", flush=True)
 
