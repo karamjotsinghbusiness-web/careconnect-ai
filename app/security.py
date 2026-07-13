@@ -31,19 +31,17 @@ def initialize_firebase_admin():
                     service_account = json.loads(decoded)
                 else:
                     service_account = json.loads(service_account_json)
-            except (ValueError, UnicodeDecodeError, json.JSONDecodeError):
+                if service_account.get("project_id") != project_id:
+                    raise ValueError("service account project does not match configured project")
+                credential = credentials.Certificate(service_account)
+            except (TypeError, ValueError, UnicodeDecodeError, json.JSONDecodeError, KeyError):
                 # Keep the service available but authentication closed. Token
                 # verification will fail without valid server credentials.
                 print("Firebase Admin credential is malformed; authentication remains unavailable.", flush=True)
                 firebase_admin.initialize_app(options=options)
                 return
 
-            credential_project = service_account.get("project_id")
-            if credential_project != project_id:
-                raise ValueError(
-                    "FIREBASE_SERVICE_ACCOUNT_JSON project_id does not match FIREBASE_PROJECT_ID"
-                )
-            firebase_admin.initialize_app(credentials.Certificate(service_account), options=options)
+            firebase_admin.initialize_app(credential, options=options)
             return
 
         # Local development and secret-file deployments may use Application

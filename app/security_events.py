@@ -74,19 +74,27 @@ def _utc_now():
 
 
 def record_security_event(event_type, severity="info", endpoint=None, actor=None, source=None, details=None):
-    initialize_security_events()
     safe = _safe_details(details)
-    with _connect() as connection:
-        cursor = connection.execute(
-            """
-            INSERT INTO security_events
-                (created_at, event_type, severity, endpoint, actor_hash, source_hash, details)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-            """,
-            (_utc_now(), event_type[:80], severity[:20], (endpoint or "")[:120],
-             pseudonymize(actor), pseudonymize(source), json.dumps(safe)),
-        )
-        event_id = cursor.lastrowid
+    try:
+        initialize_security_events()
+        with _connect() as connection:
+            cursor = connection.execute(
+                """
+                INSERT INTO security_events
+                    (created_at, event_type, severity, endpoint, actor_hash, source_hash, details)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                """,
+                (_utc_now(), event_type[:80], severity[:20], (endpoint or "")[:120],
+                 pseudonymize(actor), pseudonymize(source), json.dumps(safe)),
+            )
+            event_id = cursor.lastrowid
+    except (OSError, sqlite3.Error) as exc:
+        # Monitoring storage must not turn an otherwise valid API response into
+        # a 500. High-severity alerts still attempt delivery without an event ID.
+        print(f"Security event storage unavailable: {type(exc).__name__}", flush=True)
+        if severity in {"high", "critical"}:
+            _queue_alert(None, event_type, severity, endpoint, safe)
+        return None
 
     if severity in {"high", "critical"}:
         _queue_alert(event_id, event_type, severity, endpoint, safe)
@@ -100,48 +108,70 @@ def count_recent(event_type, source=None, minutes=5):
     if source:
         query += " AND source_hash = ?"
         params.append(pseudonymize(source))
-    with _connect() as connection:
-        return connection.execute(query, params).fetchone()[0]
+    try:
+        with _connect() as connection:
+            return connection.execute(query, params).fetchone()[0]
+    except (OSError, sqlite3.Error):
+        return 0
 
 
 def recent_events(limit=50):
-    limit = max(1, min(int(limit), 200))
-    with _connect() as connection:
-        rows = connection.execute(
-            """
-            SELECT id, created_at, event_type, severity, endpoint, actor_hash, source_hash, details
-            FROM security_events ORDER BY id DESC LIMIT ?
-            """,
-            (limit,),
-        ).fetchall()
+    try:
+        limit = int(limit)
+    except (TypeError, ValueError):
+        limit = 50
+    limit = max(1, min(limit, 200))
+    try:
+        with _connect() as connection:
+            rows = connection.execute(
+                """
+                SELECT id, created_at, event_type, severity, endpoint, actor_hash, source_hash, details
+                FROM security_events ORDER BY id DESC LIMIT ?
+                """,
+                (limit,),
+            ).fetchall()
+    except (OSError, sqlite3.Error):
+        return []
     return [dict(row) | {"details": json.loads(row["details"])} for row in rows]
 
 
 def security_summary():
     cutoff = datetime.fromtimestamp(time.time() - 24 * 60 * 60, timezone.utc).isoformat()
-    with _connect() as connection:
-        counts = connection.execute(
-            """
-            SELECT severity, COUNT(*) AS count FROM security_events
-            WHERE created_at >= ? GROUP BY severity
-            """,
-            (cutoff,),
-        ).fetchall()
-    return {"last_24_hours": {row["severity"]: row["count"] for row in counts}, "recent": recent_events(20)}
+    try:
+        with _connect() as connection:
+            counts = connection.execute(
+                """
+                SELECT severity, COUNT(*) AS count FROM security_events
+                WHERE created_at >= ? GROUP BY severity
+                """,
+                (cutoff,),
+            ).fetchall()
+    except (OSError, sqlite3.Error):
+        return {"storage_available": False, "last_24_hours": {}, "recent": []}
+    return {
+        "storage_available": True,
+        "last_24_hours": {row["severity"]: row["count"] for row in counts},
+        "recent": recent_events(20),
+    }
 
 
 def _alert_allowed(alert_key):
     cooldown = int(os.environ.get("SECURITY_ALERT_COOLDOWN_SECONDS", "900"))
     now = int(time.time())
-    with _connect() as connection:
-        row = connection.execute("SELECT last_sent_at FROM security_alerts WHERE alert_key = ?", (alert_key,)).fetchone()
-        if row and now - row["last_sent_at"] < cooldown:
-            return False
-        connection.execute(
-            "INSERT INTO security_alerts(alert_key, last_sent_at) VALUES(?, ?) "
-            "ON CONFLICT(alert_key) DO UPDATE SET last_sent_at=excluded.last_sent_at",
-            (alert_key, now),
-        )
+    try:
+        with _connect() as connection:
+            row = connection.execute("SELECT last_sent_at FROM security_alerts WHERE alert_key = ?", (alert_key,)).fetchone()
+            if row and now - row["last_sent_at"] < cooldown:
+                return False
+            connection.execute(
+                "INSERT INTO security_alerts(alert_key, last_sent_at) VALUES(?, ?) "
+                "ON CONFLICT(alert_key) DO UPDATE SET last_sent_at=excluded.last_sent_at",
+                (alert_key, now),
+            )
+    except (OSError, sqlite3.Error):
+        # Prefer a possible duplicate critical alert over silently dropping it
+        # when the alert cooldown database is unavailable.
+        return True
     return True
 
 

@@ -91,8 +91,15 @@ CORS(
 )
 
 MAX_SEARCH_HISTORY = 200
-initialize_history_store()
-initialize_security_events()
+try:
+    initialize_history_store()
+except Exception as exc:
+    logger.warning("Search history storage unavailable during startup: %s", type(exc).__name__)
+
+try:
+    initialize_security_events()
+except Exception as exc:
+    logger.warning("Security event storage unavailable during startup: %s", type(exc).__name__)
 initialize_firebase_admin()
 
 if os.environ.get("ALLOW_REAL_PHI", "false").lower() == "true" and not real_phi_enabled():
@@ -876,8 +883,11 @@ def get_recommendation():
                 "access_level": access_score.get("level"),
                 "care_gap_detected": care_gap.get("detected")
             }, max_records=MAX_SEARCH_HISTORY)
-        except Exception:
-            logger.exception("Search history write failed; returning recommendation without history")
+        except Exception as exc:
+            logger.warning(
+                "Search history write failed; returning recommendation without history: %s",
+                type(exc).__name__,
+            )
             record_security_event(
                 "search_history_write_failed",
                 "medium",
@@ -957,7 +967,14 @@ def analytics():
     if request.method == "OPTIONS":
         return json_response({"status": "ok"})
 
-    return json_response(history_summary(recent_limit=5))
+    try:
+        return json_response(history_summary(recent_limit=5))
+    except Exception:
+        logger.exception("Analytics storage unavailable")
+        return json_response({
+            "success": False,
+            "message": "Analytics storage is temporarily unavailable."
+        }, status=503)
 
 
 if __name__ == "__main__":

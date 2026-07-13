@@ -2,6 +2,7 @@ import json
 import logging
 import os
 import re
+from urllib.parse import urlparse
 
 import pandas as pd
 from openai import OpenAI
@@ -37,7 +38,8 @@ def _clean_rows(rows, kind, limit):
             continue
         name = str(row.get("name", "")).strip()
         url = str(row.get("source_url", "")).strip()
-        if not name or not url.startswith("http"):
+        parsed_url = urlparse(url)
+        if not name or parsed_url.scheme not in {"http", "https"} or not parsed_url.netloc:
             continue
         name_column = {
             "provider": "provider_name",
@@ -89,7 +91,19 @@ This is navigation information, not diagnosis. Return ONLY valid JSON with this 
 
         response = OpenAI(api_key=api_key, max_retries=0).responses.create(
             model=search_model,
-            tools=[{"type": "web_search"}],
+            tools=[{
+                "type": "web_search",
+                "user_location": {
+                    "type": "approximate",
+                    "country": "US",
+                    "city": str(city)[:100],
+                    "region": "Missouri",
+                    "timezone": "America/Chicago",
+                },
+            }],
+            # Search is required here: accepting an uncited model-memory answer
+            # would undermine the public-source verification label.
+            tool_choice="required",
             input=prompt,
             max_output_tokens=1400,
             timeout=float(os.getenv("OPENAI_SEARCH_TIMEOUT_SECONDS", "25")),
