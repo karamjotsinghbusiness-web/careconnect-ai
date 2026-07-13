@@ -108,7 +108,7 @@ def _normalize_condition_with_openai(condition):
         },
         max_output_tokens=120,
         store=False,
-        timeout=_bounded_timeout("OPENAI_NORMALIZATION_TIMEOUT_SECONDS", 2.5, 1, 3),
+        timeout=_bounded_timeout("OPENAI_NORMALIZATION_TIMEOUT_SECONDS", 5, 2, 6),
     )
     result = _parse_json(response.output_text)
     normalized = str(result.get("normalized_condition", "")).strip()[:300]
@@ -150,7 +150,7 @@ def normalize_condition(condition):
 
     worker = threading.Thread(target=run_normalization, daemon=True)
     worker.start()
-    worker.join(_bounded_timeout("OPENAI_NORMALIZATION_HARD_LIMIT_SECONDS", 3.5, 2, 5))
+    worker.join(_bounded_timeout("OPENAI_NORMALIZATION_HARD_LIMIT_SECONDS", 6.5, 3, 8))
     if worker.is_alive():
         logger.warning("OpenAI condition normalization exceeded its request budget")
         return fallback
