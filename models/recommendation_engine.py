@@ -26,6 +26,15 @@ specialty_encoder = joblib.load(SAVE_DIR / "specialty_enocders.pkl")
 
 
 NON_URGENT_CONDITION_TO_SPECIALTY = {
+    # Broad digestive concerns are best routed through primary care first. This
+    # also keeps multi-concern phrases such as "gut health and thyroid" from
+    # being forced into an unrelated class by the legacy ML model.
+    "gut health": "Family Practice",
+    "digestive health": "Family Practice",
+    "digestive issues": "Family Practice",
+    "digestive problems": "Family Practice",
+    "gut issues": "Family Practice",
+    "gut problems": "Family Practice",
     "stomach pain": "Family Practice",
     "abdominal pain": "Family Practice",
     "belly pain": "Family Practice",
@@ -53,6 +62,14 @@ NON_URGENT_CONDITION_TO_SPECIALTY = {
     "burning urination": "Family Practice",
     "uti": "Family Practice",
     "urinary pain": "Family Practice",
+
+    "thyroid": "Endocrinology",
+    "thyroid problem": "Endocrinology",
+    "thyroid issues": "Endocrinology",
+    "hypothyroidism": "Endocrinology",
+    "hyperthyroidism": "Endocrinology",
+    "hashimoto disease": "Endocrinology",
+    "hashimoto's disease": "Endocrinology",
 
     "anxiety": "Mental Health Counselor",
     "stress": "Mental Health Counselor",
@@ -90,6 +107,8 @@ SYMPTOM_KEYWORDS_TO_SPECIALTY = [
     (
         [
             "stomach",
+            "gut",
+            "digestive",
             "abdominal",
             "abdomen",
             "belly",
@@ -115,6 +134,15 @@ SYMPTOM_KEYWORDS_TO_SPECIALTY = [
             "uti"
         ],
         "Family Practice"
+    ),
+    (
+        [
+            "thyroid",
+            "hypothyroid",
+            "hyperthyroid",
+            "hashimoto"
+        ],
+        "Endocrinology"
     ),
     (
         [
@@ -218,11 +246,15 @@ def fix_value(column, value):
         if str(item).lower().strip() == value_text.lower():
             return item
 
+    # A permissive condition match can silently turn an unknown concern into a
+    # completely unrelated diagnosis/specialty. Demographic fields come from
+    # controlled form options, while free-text conditions need a strong match.
+    cutoff = 0.72 if column == "condition" else 0.35
     match = get_close_matches(
         value_text,
         allowed,
         n=1,
-        cutoff=0.35
+        cutoff=cutoff
     )
 
     if match:
