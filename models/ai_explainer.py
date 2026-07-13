@@ -7,6 +7,14 @@ from openai import OpenAI
 logger = logging.getLogger("careconnect")
 
 
+def _explanation_timeout():
+    try:
+        value = float(os.getenv("OPENAI_EXPLANATION_TIMEOUT_SECONDS", "5"))
+    except (TypeError, ValueError):
+        value = 5
+    return max(2, min(value, 5))
+
+
 def _get_client():
     api_key = os.getenv("OPENAI_API_KEY")
 
@@ -80,7 +88,7 @@ Write the answer in this format:
             model=os.getenv("OPENAI_MODEL", "gpt-4.1-mini"),
             input=prompt,
             max_output_tokens=350,
-            timeout=float(os.getenv("OPENAI_EXPLANATION_TIMEOUT_SECONDS", "8"))
+            timeout=_explanation_timeout()
         )
 
         return response.output_text

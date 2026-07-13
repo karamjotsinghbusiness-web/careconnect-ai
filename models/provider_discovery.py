@@ -11,6 +11,14 @@ from openai import OpenAI
 logger = logging.getLogger("careconnect")
 
 
+def _bounded_timeout(env_name, default, minimum, maximum):
+    try:
+        value = float(os.getenv(env_name, str(default)))
+    except (TypeError, ValueError):
+        value = default
+    return max(minimum, min(value, maximum))
+
+
 def _parse_json(text):
     text = (text or "").strip()
     text = re.sub(r"^```(?:json)?\s*|\s*```$", "", text, flags=re.IGNORECASE)
@@ -93,6 +101,7 @@ This is navigation information, not diagnosis. Return ONLY valid JSON with this 
             model=search_model,
             tools=[{
                 "type": "web_search",
+                "search_context_size": "low",
                 "user_location": {
                     "type": "approximate",
                     "country": "US",
@@ -106,7 +115,8 @@ This is navigation information, not diagnosis. Return ONLY valid JSON with this 
             tool_choice="required",
             input=prompt,
             max_output_tokens=1400,
-            timeout=float(os.getenv("OPENAI_SEARCH_TIMEOUT_SECONDS", "25")),
+            # Keep the whole synchronous Railway request below its edge timeout.
+            timeout=_bounded_timeout("OPENAI_SEARCH_TIMEOUT_SECONDS", 16, 3, 18),
         )
         result = _parse_json(response.output_text)
         providers = pd.DataFrame(_clean_rows(result.get("providers"), "provider", limit))
