@@ -16,6 +16,9 @@ except ImportError:
     from security_events import count_recent, record_security_event
 
 
+_admin_credential_unavailable = False
+
+
 def env_true(name, default="false"):
     return os.environ.get(name, default).strip().lower() in {"1", "true", "yes", "on"}
 
@@ -75,12 +78,17 @@ def verify_firebase_user_token(token, allow_public_fallback=True):
     Google's Firebase public certificates. Revocation checks need Admin
     credentials, so privileged endpoints never use this fallback.
     """
-    try:
-        return auth.verify_id_token(token, check_revoked=True)
-    except (google_auth_exceptions.DefaultCredentialsError, google_auth_exceptions.RefreshError):
-        if not allow_public_fallback:
-            raise
+    global _admin_credential_unavailable
 
+    if not (allow_public_fallback and _admin_credential_unavailable):
+        try:
+            return auth.verify_id_token(token, check_revoked=True)
+        except (google_auth_exceptions.DefaultCredentialsError, google_auth_exceptions.RefreshError):
+            if not allow_public_fallback:
+                raise
+            _admin_credential_unavailable = True
+
+    if allow_public_fallback:
         project_id = os.environ.get("FIREBASE_PROJECT_ID", "careconnectai-19ace")
         decoded = google_id_token.verify_firebase_token(
             token,
@@ -89,6 +97,9 @@ def verify_firebase_user_token(token, allow_public_fallback=True):
         )
         decoded["uid"] = decoded.get("uid") or decoded.get("user_id") or decoded.get("sub")
         return decoded
+    raise google_auth_exceptions.DefaultCredentialsError(
+        "Firebase Admin credentials are unavailable"
+    )
 
 
 def require_firebase_user(json_response):

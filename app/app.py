@@ -5,6 +5,7 @@ from pathlib import Path
 import math
 import json
 import random
+from concurrent.futures import ThreadPoolExecutor
 from datetime import date, datetime
 
 import pandas as pd
@@ -16,7 +17,7 @@ sys.path.append(str(BASE_DIR))
 from flask import Flask, request, Response
 from flask_cors import CORS
 
-from models.recommendation_engine import recommend, get_condition_suggestions
+from models.recommendation_engine import recommend, get_condition_suggestions, manual_specialty_match
 from models.ai_explainer import explain_recommendation
 from models.provider_discovery import discover_supplemental_resources, merge_supplemental
 try:
@@ -62,6 +63,7 @@ logger = logging.getLogger("careconnect")
 
 app = Flask(__name__)
 app.config["MAX_CONTENT_LENGTH"] = 16 * 1024
+SUPPLEMENTAL_EXECUTOR = ThreadPoolExecutor(max_workers=2, thread_name_prefix="supplemental-search")
 
 # These are the frontends allowed to call your Railway backend.
 # Add more domains here if you later use a custom domain.
@@ -691,6 +693,20 @@ def get_recommendation():
             "longitude": data.get("longitude") if real_phi_enabled() else None
         }
 
+        supplemental_limit = max(
+            0, min(safe_int(os.environ.get("OPENAI_SEARCH_RESULT_LIMIT", 3), default=3), 5)
+        )
+        supplemental_future = None
+        if supplemental_limit and (demo_only or openai_phi_enabled()):
+            specialty_hint = manual_specialty_match(patient["condition"]) or "Primary Care"
+            supplemental_future = SUPPLEMENTAL_EXECUTOR.submit(
+                discover_supplemental_resources,
+                city=patient["city"],
+                specialty=specialty_hint,
+                condition=patient["condition"],
+                limit=supplemental_limit,
+            )
+
         result = recommend(patient)
 
         specialty = "No exact AI specialty match"
@@ -743,23 +759,21 @@ def get_recommendation():
         recommended_hospitals = as_dataframe(recommended_hospitals)
         recommended_long_term = as_dataframe(recommended_long_term)
 
-        supplemental_limit = max(
-            0, min(safe_int(os.environ.get("OPENAI_SEARCH_RESULT_LIMIT", 3), default=3), 5)
-        )
-        (
-            supplemental_providers,
-            supplemental_clinics,
-            supplemental_advocates,
-        ) = (
-            discover_supplemental_resources(
-                city=patient["city"],
-                specialty=specialty,
-                condition=patient["condition"],
-                limit=supplemental_limit,
+        try:
+            (
+                supplemental_providers,
+                supplemental_clinics,
+                supplemental_advocates,
+            ) = (
+                supplemental_future.result(timeout=19)
+                if supplemental_future is not None
+                else (pd.DataFrame(), pd.DataFrame(), pd.DataFrame())
             )
-            if (demo_only or openai_phi_enabled())
-            else (pd.DataFrame(), pd.DataFrame(), pd.DataFrame())
-        )
+        except Exception as exc:
+            logger.warning("Supplemental search unavailable: %s", type(exc).__name__)
+            supplemental_providers = pd.DataFrame()
+            supplemental_clinics = pd.DataFrame()
+            supplemental_advocates = pd.DataFrame()
         providers = merge_supplemental(
             providers,
             supplemental_providers,
