@@ -4,6 +4,9 @@ import json
 import os
 
 import firebase_admin
+from google.auth import exceptions as google_auth_exceptions
+from google.auth.transport import requests as google_auth_requests
+from google.oauth2 import id_token as google_id_token
 from firebase_admin import auth, credentials
 from flask import g, request
 
@@ -65,6 +68,29 @@ def openai_phi_enabled():
     ])
 
 
+def verify_firebase_user_token(token, allow_public_fallback=True):
+    """Verify ordinary users even when Railway's Admin credential is unavailable.
+
+    The fallback still verifies signature, issuer, audience, and expiry against
+    Google's Firebase public certificates. Revocation checks need Admin
+    credentials, so privileged endpoints never use this fallback.
+    """
+    try:
+        return auth.verify_id_token(token, check_revoked=True)
+    except (google_auth_exceptions.DefaultCredentialsError, google_auth_exceptions.RefreshError):
+        if not allow_public_fallback:
+            raise
+
+        project_id = os.environ.get("FIREBASE_PROJECT_ID", "careconnectai-19ace")
+        decoded = google_id_token.verify_firebase_token(
+            token,
+            google_auth_requests.Request(),
+            audience=project_id,
+        )
+        decoded["uid"] = decoded.get("uid") or decoded.get("user_id") or decoded.get("sub")
+        return decoded
+
+
 def require_firebase_user(json_response):
     def decorator(view):
         @functools.wraps(view)
@@ -81,7 +107,7 @@ def require_firebase_user(json_response):
                 return json_response({"success": False, "message": "Authentication required."}, 401)
 
             try:
-                g.firebase_user = auth.verify_id_token(header[7:], check_revoked=True)
+                g.firebase_user = verify_firebase_user_token(header[7:])
             except Exception:
                 record_security_event(
                     "authentication_invalid", "medium", request.path,
@@ -118,7 +144,9 @@ def require_admin(json_response):
                 )
                 return json_response({"success": False, "message": "Authentication required."}, 401)
             try:
-                g.firebase_user = auth.verify_id_token(header[7:], check_revoked=True)
+                g.firebase_user = verify_firebase_user_token(
+                    header[7:], allow_public_fallback=False
+                )
             except Exception:
                 record_security_event(
                     "admin_authentication_invalid", "high", request.path,
