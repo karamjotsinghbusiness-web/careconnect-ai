@@ -852,20 +852,33 @@ def get_recommendation():
         else:
             message = "This symptom was not found in the AI model, so nearby clinics, fallback care, hospital options, and long-term hospital options are shown instead."
 
-        try:
-            if not (demo_only or openai_phi_enabled()):
-                raise RuntimeError("OpenAI PHI processing is disabled until BAA controls are confirmed")
-            ai_explanation = explain_recommendation(
-                patient=patient,
-                specialty=specialty,
-                providers=providers,
-                advocates=advocates,
-                hospitals=recommended_hospitals,
-                hospices=None
+        if os.environ.get("OPENAI_API_KEY") and os.environ.get(
+            "ENABLE_OPENAI_PROVIDER_SEARCH", "true"
+        ).lower() == "true":
+            # Supplemental web search already used the request's OpenAI time
+            # budget. Avoid a second sequential API call that can push Railway
+            # beyond its 30-second edge limit.
+            ai_explanation = (
+                f"CareConnect matched the fictional concern to {specialty} and organized nearby "
+                "care options from the dataset and available public listings. Confirm supplemental "
+                "web results directly before use and contact a licensed healthcare professional for "
+                "medical decisions."
             )
-        except Exception:
-            logger.exception("explain_recommendation failed")
-            ai_explanation = "CareConnect AI explanation is currently unavailable, but the provider recommendations were still created."
+        else:
+            try:
+                if not (demo_only or openai_phi_enabled()):
+                    raise RuntimeError("OpenAI PHI processing is disabled until BAA controls are confirmed")
+                ai_explanation = explain_recommendation(
+                    patient=patient,
+                    specialty=specialty,
+                    providers=providers,
+                    advocates=advocates,
+                    hospitals=recommended_hospitals,
+                    hospices=None
+                )
+            except Exception:
+                logger.exception("explain_recommendation failed")
+                ai_explanation = "CareConnect AI explanation is currently unavailable, but the provider recommendations were still created."
 
         # Analytics storage must never erase a valid recommendation. Railway
         # volumes can be temporarily unavailable or SQLite can be locked.

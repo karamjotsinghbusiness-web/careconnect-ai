@@ -1,7 +1,9 @@
 import json
 import logging
 import os
+import queue
 import re
+import threading
 from urllib.parse import urlparse
 
 import pandas as pd
@@ -9,6 +11,7 @@ from openai import OpenAI
 
 
 logger = logging.getLogger("careconnect")
+_SEARCH_SLOTS = threading.BoundedSemaphore(2)
 
 
 def _bounded_timeout(env_name, default, minimum, maximum):
@@ -71,7 +74,7 @@ def _clean_rows(rows, kind, limit):
     return cleaned
 
 
-def discover_supplemental_resources(city, specialty, condition, limit=3):
+def _discover_supplemental_resources(city, specialty, condition, limit=3):
     """Find public listings to supplement, never replace, the local dataset."""
     api_key = os.getenv("OPENAI_API_KEY")
     if not api_key or os.getenv("ENABLE_OPENAI_PROVIDER_SEARCH", "true").lower() != "true":
@@ -91,11 +94,12 @@ This is navigation information, not diagnosis. Return ONLY valid JSON with this 
 """
 
     try:
-        search_model = os.getenv("OPENAI_SEARCH_MODEL", "gpt-5.4-mini").strip()
-        # Older setup instructions used gpt-5-mini. Use the current fast model
-        # that explicitly supports Responses API web search.
-        if search_model == "gpt-5-mini":
-            search_model = "gpt-5.4-mini"
+        search_model = os.getenv("OPENAI_SEARCH_MODEL", "gpt-4.1-mini").strip()
+        # Reasoning models can exceed Railway's synchronous edge budget for a
+        # simple local listing lookup. GPT-4.1 mini supports Responses web
+        # search and is the low-latency path for this request.
+        if search_model in {"gpt-5-mini", "gpt-5.4-mini"}:
+            search_model = "gpt-4.1-mini"
 
         response = OpenAI(api_key=api_key, max_retries=0).responses.create(
             model=search_model,
@@ -116,7 +120,7 @@ This is navigation information, not diagnosis. Return ONLY valid JSON with this 
             input=prompt,
             max_output_tokens=1400,
             # Keep the whole synchronous Railway request below its edge timeout.
-            timeout=_bounded_timeout("OPENAI_SEARCH_TIMEOUT_SECONDS", 16, 3, 18),
+            timeout=_bounded_timeout("OPENAI_SEARCH_TIMEOUT_SECONDS", 10, 3, 12),
         )
         result = _parse_json(response.output_text)
         providers = pd.DataFrame(_clean_rows(result.get("providers"), "provider", limit))
@@ -125,6 +129,39 @@ This is navigation information, not diagnosis. Return ONLY valid JSON with this 
         return providers, clinics, advocates
     except Exception:
         logger.exception("OpenAI supplemental provider search failed")
+        return pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
+
+
+def discover_supplemental_resources(city, specialty, condition, limit=3):
+    """Run public-resource search with a hard wall-clock request budget."""
+    if not os.getenv("OPENAI_API_KEY") or os.getenv(
+        "ENABLE_OPENAI_PROVIDER_SEARCH", "true"
+    ).lower() != "true":
+        return pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
+
+    if not _SEARCH_SLOTS.acquire(blocking=False):
+        logger.warning("OpenAI supplemental search skipped because search capacity is busy")
+        return pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
+
+    results = queue.Queue(maxsize=1)
+
+    def run_search():
+        try:
+            results.put(_discover_supplemental_resources(city, specialty, condition, limit))
+        finally:
+            _SEARCH_SLOTS.release()
+
+    worker = threading.Thread(target=run_search, daemon=True)
+    worker.start()
+    worker.join(_bounded_timeout("OPENAI_SEARCH_HARD_LIMIT_SECONDS", 14, 5, 18))
+
+    if worker.is_alive():
+        logger.warning("OpenAI supplemental provider search exceeded its request budget")
+        return pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
+
+    try:
+        return results.get_nowait()
+    except queue.Empty:
         return pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
 
 
