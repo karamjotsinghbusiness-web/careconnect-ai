@@ -19,7 +19,11 @@ from flask_cors import CORS
 
 from models.recommendation_engine import recommend, get_condition_suggestions, manual_specialty_match
 from models.ai_explainer import explain_recommendation
-from models.provider_discovery import discover_supplemental_resources, merge_supplemental
+from models.provider_discovery import (
+    discover_supplemental_resources,
+    merge_supplemental,
+    normalize_condition,
+)
 try:
     # Railway/Gunicorn loads this file as the app.app package module.
     from app.history_store import add_search, history_summary, initialize_history_store
@@ -693,6 +697,17 @@ def get_recommendation():
             "longitude": data.get("longitude") if real_phi_enabled() else None
         }
 
+        condition_interpretation = {
+            "entered_condition": patient["condition"],
+            "normalized_condition": patient["condition"],
+            "changed": False,
+            "confidence": "local_fallback",
+            "used_openai": False,
+        }
+        if demo_only or openai_phi_enabled():
+            condition_interpretation = normalize_condition(patient["condition"])
+            patient["condition"] = condition_interpretation["normalized_condition"]
+
         supplemental_limit = max(
             0, min(safe_int(os.environ.get("OPENAI_SEARCH_RESULT_LIMIT", 3), default=3), 5)
         )
@@ -928,6 +943,7 @@ def get_recommendation():
             "message": message,
             "ai_explanation": ai_explanation,
             "specialty": specialty,
+            "condition_interpretation": condition_interpretation,
             "confidence": confidence,
             "emergency": emergency,
             "access_score": access_score,
@@ -953,6 +969,13 @@ def get_recommendation():
             "message": "CareConnect AI could not process this request. Please try again shortly.",
             "ai_explanation": "AI explanation is unavailable because the recommendation request failed.",
             "specialty": "No exact AI specialty match",
+            "condition_interpretation": {
+                "entered_condition": "",
+                "normalized_condition": "",
+                "changed": False,
+                "confidence": "unavailable",
+                "used_openai": False
+            },
             "confidence": 0,
             "emergency": {
                 "is_emergency": False,

@@ -12,6 +12,7 @@ from openai import OpenAI
 
 logger = logging.getLogger("careconnect")
 _SEARCH_SLOTS = threading.BoundedSemaphore(2)
+_NORMALIZATION_SLOTS = threading.BoundedSemaphore(2)
 
 
 def _bounded_timeout(env_name, default, minimum, maximum):
@@ -74,6 +75,91 @@ def _clean_rows(rows, kind, limit):
     return cleaned
 
 
+def _normalize_condition_with_openai(condition):
+    response = OpenAI(api_key=os.environ["OPENAI_API_KEY"], max_retries=0).responses.create(
+        model=os.getenv("OPENAI_NORMALIZATION_MODEL", "gpt-4.1-mini").strip(),
+        instructions=(
+            "Correct spelling and spacing in the patient-entered symptom or condition so a "
+            "healthcare navigation matcher can understand it. Preserve the user's meaning, do "
+            "not diagnose, do not add symptoms, and do not provide medical advice. If it is "
+            "already clear, return it unchanged. Examples: 'hedace' becomes 'headache'; "
+            "'stomch pane' becomes 'stomach pain'; 'hart atack' becomes 'heart attack'."
+        ),
+        input=str(condition)[:300],
+        text={
+            "format": {
+                "type": "json_schema",
+                "name": "condition_normalization",
+                "strict": True,
+                "schema": {
+                    "type": "object",
+                    "properties": {
+                        "normalized_condition": {"type": "string"},
+                        "changed": {"type": "boolean"},
+                        "confidence": {
+                            "type": "string",
+                            "enum": ["high", "medium", "low"],
+                        },
+                    },
+                    "required": ["normalized_condition", "changed", "confidence"],
+                    "additionalProperties": False,
+                },
+            }
+        },
+        max_output_tokens=120,
+        store=False,
+        timeout=_bounded_timeout("OPENAI_NORMALIZATION_TIMEOUT_SECONDS", 2.5, 1, 3),
+    )
+    result = _parse_json(response.output_text)
+    normalized = str(result.get("normalized_condition", "")).strip()[:300]
+    if not normalized:
+        raise ValueError("OpenAI returned an empty normalized condition")
+    return {
+        "entered_condition": str(condition)[:300],
+        "normalized_condition": normalized,
+        "changed": normalized.casefold() != str(condition).strip().casefold(),
+        "confidence": result.get("confidence", "low"),
+        "used_openai": True,
+    }
+
+
+def normalize_condition(condition):
+    """Correct spelling with OpenAI without blocking the request indefinitely."""
+    entered = str(condition or "").strip()[:300]
+    fallback = {
+        "entered_condition": entered,
+        "normalized_condition": entered,
+        "changed": False,
+        "confidence": "local_fallback",
+        "used_openai": False,
+    }
+    if not entered or not os.getenv("OPENAI_API_KEY"):
+        return fallback
+    if not _NORMALIZATION_SLOTS.acquire(blocking=False):
+        return fallback
+
+    results = queue.Queue(maxsize=1)
+
+    def run_normalization():
+        try:
+            results.put(_normalize_condition_with_openai(entered))
+        except Exception as exc:
+            logger.warning("OpenAI condition normalization failed: %s", type(exc).__name__)
+        finally:
+            _NORMALIZATION_SLOTS.release()
+
+    worker = threading.Thread(target=run_normalization, daemon=True)
+    worker.start()
+    worker.join(_bounded_timeout("OPENAI_NORMALIZATION_HARD_LIMIT_SECONDS", 3.5, 2, 5))
+    if worker.is_alive():
+        logger.warning("OpenAI condition normalization exceeded its request budget")
+        return fallback
+    try:
+        return results.get_nowait()
+    except queue.Empty:
+        return fallback
+
+
 def _discover_supplemental_resources(city, specialty, condition, limit=3):
     """Find public listings to supplement, never replace, the local dataset."""
     api_key = os.getenv("OPENAI_API_KEY")
@@ -119,6 +205,7 @@ This is navigation information, not diagnosis. Return ONLY valid JSON with this 
             tool_choice="required",
             input=prompt,
             max_output_tokens=1400,
+            store=False,
             # Keep the whole synchronous Railway request below its edge timeout.
             timeout=_bounded_timeout("OPENAI_SEARCH_TIMEOUT_SECONDS", 10, 3, 12),
         )
