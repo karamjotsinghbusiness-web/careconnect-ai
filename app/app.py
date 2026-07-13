@@ -5,6 +5,7 @@ from pathlib import Path
 import math
 import json
 import random
+from datetime import date, datetime
 
 import pandas as pd
 import numpy as np
@@ -105,14 +106,25 @@ def clean_data(obj):
     if obj is None:
         return None
 
-    if isinstance(obj, float) and math.isnan(obj):
-        return None
+    if isinstance(obj, (str, bool, int)):
+        return obj
+
+    if isinstance(obj, (date, datetime, pd.Timestamp)):
+        if pd.isna(obj):
+            return None
+        return obj.isoformat()
+
+    if isinstance(obj, Path):
+        return str(obj)
+
+    if isinstance(obj, (np.bool_,)):
+        return bool(obj)
 
     if isinstance(obj, (np.integer,)):
         return int(obj)
 
-    if isinstance(obj, (np.floating,)):
-        if np.isnan(obj):
+    if isinstance(obj, (float, np.floating)):
+        if not math.isfinite(float(obj)):
             return None
         return float(obj)
 
@@ -130,6 +142,12 @@ def clean_data(obj):
 
     if isinstance(obj, dict):
         return {key: clean_data(value) for key, value in obj.items()}
+
+    try:
+        if pd.isna(obj):
+            return None
+    except (TypeError, ValueError):
+        pass
 
     return obj
 
@@ -842,19 +860,30 @@ def get_recommendation():
             logger.exception("explain_recommendation failed")
             ai_explanation = "CareConnect AI explanation is currently unavailable, but the provider recommendations were still created."
 
-        add_search({
-            "specialty": specialty,
-            "provider_count": len(providers),
-            "nearest_clinic_count": len(nearest_clinics),
-            "fallback_hospital_count": len(fallback_hospitals),
-            "recommended_hospital_count": len(recommended_hospitals),
-            "recommended_long_term_count": len(recommended_long_term),
-            "advocate_count": len(advocates),
-            "ai_matched": ai_matched,
-            "access_score": access_score.get("overall"),
-            "access_level": access_score.get("level"),
-            "care_gap_detected": care_gap.get("detected")
-        }, max_records=MAX_SEARCH_HISTORY)
+        # Analytics storage must never erase a valid recommendation. Railway
+        # volumes can be temporarily unavailable or SQLite can be locked.
+        try:
+            add_search({
+                "specialty": specialty,
+                "provider_count": len(providers),
+                "nearest_clinic_count": len(nearest_clinics),
+                "fallback_hospital_count": len(fallback_hospitals),
+                "recommended_hospital_count": len(recommended_hospitals),
+                "recommended_long_term_count": len(recommended_long_term),
+                "advocate_count": len(advocates),
+                "ai_matched": ai_matched,
+                "access_score": access_score.get("overall"),
+                "access_level": access_score.get("level"),
+                "care_gap_detected": care_gap.get("detected")
+            }, max_records=MAX_SEARCH_HISTORY)
+        except Exception:
+            logger.exception("Search history write failed; returning recommendation without history")
+            record_security_event(
+                "search_history_write_failed",
+                "medium",
+                request.path,
+                details={"reason": "storage_unavailable"},
+            )
 
         return json_response({
             "success": True,
@@ -882,8 +911,9 @@ def get_recommendation():
         logger.exception("get_recommendation failed")
         return json_response({
             "success": False,
+            "error_code": "recommendation_failed",
             "ai_matched": False,
-            "message": "CareConnect AI could not process this request. Please check the backend files and redeploy.",
+            "message": "CareConnect AI could not process this request. Please try again shortly.",
             "ai_explanation": "AI explanation is unavailable because the recommendation request failed.",
             "specialty": "No exact AI specialty match",
             "confidence": 0,
