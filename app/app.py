@@ -14,7 +14,7 @@ import numpy as np
 BASE_DIR = Path(__file__).resolve().parent.parent
 sys.path.append(str(BASE_DIR))
 
-from flask import Flask, request, Response
+from flask import Flask, request, Response, g
 from flask_cors import CORS
 
 from models.recommendation_engine import recommend, get_condition_suggestions, manual_specialty_match
@@ -24,6 +24,14 @@ from models.provider_discovery import (
     merge_supplemental,
     normalize_condition,
 )
+try:
+    from app.insurance import assess_insurance, add_network_verification_status
+    from app.clinical_intake import structure_clinical_intake
+    from app.navigation_plan import build_navigation_plan
+except ImportError:
+    from insurance import assess_insurance, add_network_verification_status
+    from clinical_intake import structure_clinical_intake
+    from navigation_plan import build_navigation_plan
 try:
     # Railway/Gunicorn loads this file as the app.app package module.
     from app.history_store import add_search, history_summary, initialize_history_store
@@ -36,6 +44,7 @@ try:
         openai_phi_enabled,
         real_phi_enabled,
         require_admin,
+        require_clinician,
         require_firebase_user,
     )
 except ImportError:
@@ -44,6 +53,7 @@ except ImportError:
         openai_phi_enabled,
         real_phi_enabled,
         require_admin,
+        require_clinician,
         require_firebase_user,
     )
 try:
@@ -156,6 +166,8 @@ def clean_data(obj):
     if isinstance(obj, dict):
         return {key: clean_data(value) for key, value in obj.items()}
 
+    # Pandas can return pd.NA/NaT and other scalar missing-value objects from
+    # mixed dataframe columns. Convert those before strict JSON serialization.
     try:
         if pd.isna(obj):
             return None
@@ -668,6 +680,63 @@ def symptom_suggestions():
         })
 
 
+@app.route("/insurance/assess", methods=["POST", "OPTIONS"])
+@require_firebase_user(json_response)
+def insurance_assessment():
+    if request.method == "OPTIONS":
+        return json_response({"status": "ok"})
+
+    data = request.get_json(silent=True) or {}
+    demo_only = data.get("demo_only_confirmed") is True
+    if not real_phi_enabled() and not demo_only:
+        return json_response({
+            "success": False,
+            "message": (
+                "Real patient insurance information is disabled until hosting "
+                "and Google BAAs are confirmed. Use fictional demonstration data only."
+            ),
+        }, status=403)
+
+    return json_response({
+        "success": True,
+        "insurance_assessment": assess_insurance(data),
+    })
+
+
+@app.route("/clinical/intake/structure", methods=["POST", "OPTIONS"])
+@require_clinician(json_response)
+def clinical_intake_structure():
+    if request.method == "OPTIONS":
+        return json_response({"status": "ok"})
+
+    data = request.get_json(silent=True) or {}
+    demo_only = data.get("demo_only_confirmed") is True
+    if not real_phi_enabled() and not demo_only:
+        return json_response({
+            "success": False,
+            "message": (
+                "Real patient information is disabled until hosting and Google "
+                "BAAs are confirmed. Use fictional demonstration data only."
+            ),
+        }, status=403)
+
+    insurance = assess_insurance(data.get("insurance", {}))
+    result = structure_clinical_intake(
+        data,
+        insurance_assessment=insurance,
+        allow_openai=demo_only or openai_phi_enabled(),
+    )
+    record_security_event(
+        "clinical_intake_structured",
+        "info",
+        request.path,
+        actor=g.firebase_user.get("uid"),
+        source=request.remote_addr,
+        details={"status_code": "draft_created"},
+    )
+    return json_response(result)
+
+
 @app.route("/recommend", methods=["POST", "OPTIONS"])
 @require_firebase_user(json_response)
 def get_recommendation():
@@ -692,10 +761,19 @@ def get_recommendation():
             "gender": str(data.get("gender", ""))[:50],
             "city": str(data.get("city", ""))[:100],
             "insurance": str(data.get("insurance", ""))[:100],
+            "insurance_plan_type": str(data.get("insurance_plan_type", ""))[:60],
             "condition": str(data.get("condition", ""))[:300],
+            "priority": str(data.get("priority", "fastest"))[:30],
+            "barriers": data.get("barriers", []) if isinstance(data.get("barriers", []), list) else [],
             "latitude": data.get("latitude") if real_phi_enabled() else None,
             "longitude": data.get("longitude") if real_phi_enabled() else None
         }
+        insurance = assess_insurance({
+            "insurance": patient["insurance"],
+            "insurance_plan_type": patient["insurance_plan_type"],
+            "member_id_present": data.get("member_id_present") is True,
+            "date_of_birth_present": data.get("date_of_birth_present") is True,
+        })
 
         condition_interpretation = {
             "entered_condition": patient["condition"],
@@ -811,6 +889,12 @@ def get_recommendation():
             supplemental_limit=supplemental_limit,
         )
 
+        providers = add_network_verification_status(providers, insurance)
+        nearest_clinics = add_network_verification_status(nearest_clinics, insurance)
+        fallback_hospitals = add_network_verification_status(fallback_hospitals, insurance)
+        recommended_hospitals = add_network_verification_status(recommended_hospitals, insurance)
+        recommended_long_term = add_network_verification_status(recommended_long_term, insurance)
+
         emergency = detect_emergency(patient["condition"])
 
         confidence = confidence_score(
@@ -874,6 +958,20 @@ def get_recommendation():
             recommended_hospitals
         )
 
+        navigation_plan = build_navigation_plan(
+            patient=patient,
+            specialty=specialty,
+            emergency=emergency,
+            access_score=access_score,
+            care_gap=care_gap,
+            insurance_assessment=insurance,
+            providers=providers,
+            nearest_clinics=nearest_clinics,
+            fallback_hospitals=fallback_hospitals,
+            recommended_hospitals=recommended_hospitals,
+            advocates=advocates,
+        )
+
         ai_matched = specialty != "No exact AI specialty match"
 
         if ai_matched:
@@ -903,7 +1001,8 @@ def get_recommendation():
                     providers=providers,
                     advocates=advocates,
                     hospitals=recommended_hospitals,
-                    hospices=None
+                    hospices=None,
+                    navigation_plan=navigation_plan,
                 )
             except Exception:
                 logger.exception("explain_recommendation failed")
@@ -952,6 +1051,8 @@ def get_recommendation():
             "next_best_actions": next_best_actions,
             "navigation_questions": navigation_questions,
             "business_intelligence": business_intelligence,
+            "navigation_plan": navigation_plan,
+            "insurance_assessment": insurance,
             "providers": providers,
             "advocates": advocates,
             "nearest_clinics": nearest_clinics,
@@ -1001,6 +1102,24 @@ def get_recommendation():
             "navigation_questions": [],
             "business_intelligence": {
                 "signals": []
+            },
+            "navigation_plan": {
+                "version": "care-route-v1",
+                "scope": "administrative_care_navigation_only",
+                "headline": "Care route unavailable",
+                "tasks": [],
+                "care_options": [],
+                "call_kits": {},
+                "prep_pack": {},
+                "barrier_plan": [],
+                "backup_route": [],
+            },
+            "insurance_assessment": {
+                "coverage_status": "not_verified",
+                "coverage_status_label": "Coverage not verified",
+                "summary": "Insurance assessment is unavailable because the recommendation request failed.",
+                "missing_for_verification": [],
+                "next_steps": []
             },
             "providers": [],
             "advocates": [],

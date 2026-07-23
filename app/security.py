@@ -140,6 +140,64 @@ def require_firebase_user(json_response):
     return decorator
 
 
+def require_clinician(json_response):
+    """Require a server-issued workforce claim for clinical endpoints.
+
+    Firestore profile roles are intentionally not trusted here because users
+    can select a profile role during signup.  A clinic administrator must add a
+    Firebase custom claim after verifying the workforce member.
+    """
+
+    clinical_roles = {"doctor", "nurse", "provider"}
+
+    def decorator(view):
+        @functools.wraps(view)
+        def wrapped(*args, **kwargs):
+            if request.method == "OPTIONS":
+                return view(*args, **kwargs)
+
+            header = request.headers.get("Authorization", "")
+            if not header.startswith("Bearer "):
+                record_security_event(
+                    "clinical_authentication_missing", "high", request.path,
+                    source=request.remote_addr, details={"reason": "missing_bearer_token"},
+                )
+                return json_response({"success": False, "message": "Clinician authentication required."}, 401)
+
+            try:
+                g.firebase_user = auth.verify_id_token(header[7:], check_revoked=True)
+            except Exception:
+                record_security_event(
+                    "clinical_authentication_invalid", "high", request.path,
+                    source=request.remote_addr, details={"reason": "invalid_or_revoked_token"},
+                )
+                return json_response({"success": False, "message": "Invalid or expired clinician session."}, 401)
+
+            role = str(
+                g.firebase_user.get("clinical_role")
+                or g.firebase_user.get("role")
+                or ""
+            ).strip().lower()
+            authorized = g.firebase_user.get("admin") is True or role in clinical_roles
+            if not authorized:
+                record_security_event(
+                    "clinical_access_denied", "high", request.path,
+                    actor=g.firebase_user.get("uid"), source=request.remote_addr,
+                    details={"reason": "clinical_claim_required"},
+                )
+                return json_response({
+                    "success": False,
+                    "message": (
+                        "Verified nurse, doctor, or provider access is required. "
+                        "Ask an organization administrator to approve this account."
+                    ),
+                }, 403)
+
+            return view(*args, **kwargs)
+        return wrapped
+    return decorator
+
+
 def require_admin(json_response):
     def decorator(view):
         @functools.wraps(view)
