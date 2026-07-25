@@ -23,10 +23,28 @@ try:
     from app.insurance import assess_insurance, add_network_verification_status
     from app.clinical_intake import structure_clinical_intake
     from app.navigation_plan import build_navigation_plan
+    from app.care_coordination import (
+        CareCoordinationError,
+        create_care_request,
+        initialize_care_coordination_store,
+        list_patient_requests,
+        list_work_queue,
+        revoke_patient_request,
+        update_request_status,
+    )
 except ImportError:
     from insurance import assess_insurance, add_network_verification_status
     from clinical_intake import structure_clinical_intake
     from navigation_plan import build_navigation_plan
+    from care_coordination import (
+        CareCoordinationError,
+        create_care_request,
+        initialize_care_coordination_store,
+        list_patient_requests,
+        list_work_queue,
+        revoke_patient_request,
+        update_request_status,
+    )
 try:
     # Railway/Gunicorn loads this file as the app.app package module.
     from app.history_store import add_search, history_summary, initialize_history_store
@@ -103,6 +121,7 @@ CORS(
 MAX_SEARCH_HISTORY = 200
 initialize_history_store()
 initialize_security_events()
+initialize_care_coordination_store()
 initialize_firebase_admin()
 
 if os.environ.get("ALLOW_REAL_PHI", "false").lower() == "true" and not real_phi_enabled():
@@ -688,6 +707,141 @@ def insurance_assessment():
         "success": True,
         "insurance_assessment": assess_insurance(data),
     })
+
+
+@app.route("/coordination/requests", methods=["GET", "POST", "OPTIONS"])
+@require_firebase_user(json_response)
+def coordination_requests():
+    if request.method == "OPTIONS":
+        return json_response({"status": "ok"})
+
+    owner_uid = g.firebase_user.get("uid")
+    try:
+        if request.method == "GET":
+            return json_response({
+                "success": True,
+                "requests": list_patient_requests(owner_uid, request.args.get("limit", 50)),
+                "real_phi_enabled": real_phi_enabled(),
+            })
+
+        data = request.get_json(silent=True) or {}
+        care_request, created = create_care_request(
+            owner_uid,
+            data,
+            allow_real_phi=real_phi_enabled(),
+        )
+        record_security_event(
+            "care_coordination_request_created" if created else "care_coordination_request_replayed",
+            "info",
+            request.path,
+            actor=owner_uid,
+            source=request.remote_addr,
+            details={"status_code": care_request.get("status")},
+        )
+        return json_response({
+            "success": True,
+            "created": created,
+            "request": care_request,
+            "message": (
+                "Request recorded. No provider or insurer contact is verified yet."
+                if created
+                else "This request was already recorded; no duplicate was created."
+            ),
+        }, status=201 if created else 200)
+    except CareCoordinationError as exc:
+        return json_response({"success": False, "message": str(exc)}, status=400)
+    except (TypeError, ValueError):
+        return json_response({
+            "success": False,
+            "message": "The request could not be processed. Review the fields and try again.",
+        }, status=400)
+
+
+@app.route("/coordination/requests/<request_id>/revoke", methods=["POST", "OPTIONS"])
+@require_firebase_user(json_response)
+def coordination_request_revoke(request_id):
+    if request.method == "OPTIONS":
+        return json_response({"status": "ok"})
+
+    owner_uid = g.firebase_user.get("uid")
+    try:
+        care_request, changed = revoke_patient_request(owner_uid, request_id)
+        if changed:
+            record_security_event(
+                "care_coordination_consent_revoked",
+                "info",
+                request.path,
+                actor=owner_uid,
+                source=request.remote_addr,
+                details={"status_code": "revoked"},
+            )
+        return json_response({
+            "success": True,
+            "changed": changed,
+            "request": care_request,
+            "message": (
+                "Authorization revoked. CareConnect will not take additional actions."
+                if changed
+                else "Authorization was already revoked."
+            ),
+        })
+    except CareCoordinationError as exc:
+        status = 404 if "not found" in str(exc).lower() else 409
+        return json_response({"success": False, "message": str(exc)}, status=status)
+
+
+@app.route("/coordination/work-queue", methods=["GET", "OPTIONS"])
+@require_clinician(json_response)
+def coordination_work_queue():
+    if request.method == "OPTIONS":
+        return json_response({"status": "ok"})
+
+    include_demo = request.args.get("include_demo", "true").lower() in {"1", "true", "yes"}
+    try:
+        return json_response({
+            "success": True,
+            "requests": list_work_queue(
+                include_demo=include_demo,
+                limit=request.args.get("limit", 100),
+            ),
+        })
+    except (TypeError, ValueError):
+        return json_response({
+            "success": False,
+            "message": "Choose a valid work-queue limit.",
+        }, status=400)
+
+
+@app.route("/coordination/requests/<request_id>/status", methods=["POST", "OPTIONS"])
+@require_clinician(json_response)
+def coordination_request_status(request_id):
+    if request.method == "OPTIONS":
+        return json_response({"status": "ok"})
+
+    data = request.get_json(silent=True) or {}
+    actor_uid = g.firebase_user.get("uid")
+    try:
+        care_request = update_request_status(
+            actor_uid,
+            request_id,
+            data.get("status"),
+        )
+        record_security_event(
+            "care_coordination_status_updated",
+            "info",
+            request.path,
+            actor=actor_uid,
+            source=request.remote_addr,
+            details={"status_code": care_request.get("status")},
+        )
+        return json_response({
+            "success": True,
+            "request": care_request,
+            "message": care_request.get("last_verified_event"),
+        })
+    except CareCoordinationError as exc:
+        status = 404 if "not found" in str(exc).lower() else 409
+        return json_response({"success": False, "message": str(exc)}, status=status)
 
 
 @app.route("/clinical/intake/structure", methods=["POST", "OPTIONS"])
