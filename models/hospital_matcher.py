@@ -3,6 +3,10 @@ import pandas as pd
 from pathlib import Path
 from math import radians, sin, cos, sqrt, atan2
 from difflib import get_close_matches
+from models.location_resolver import (
+    is_explicit_county,
+    resolve_missouri_location,
+)
 from models.sql_store import load_current_dataset
 
 
@@ -219,11 +223,20 @@ def get_condition_measure_ids(condition):
     ]
 
 
-def get_hospital_city_coordinates(city):
+def get_hospital_city_coordinates(city, allow_bare_county=True):
     city_clean = clean_city(city)
+    census_location = resolve_missouri_location(
+        city,
+        allow_bare_county=allow_bare_county,
+    )
+    if census_location is not None:
+        return census_location.coordinates
 
     if city_clean in FALLBACK_CITY_COORDINATES:
         return FALLBACK_CITY_COORDINATES[city_clean]
+
+    if is_explicit_county(city):
+        return None, None
 
     close = get_close_matches(
         city_clean,
@@ -241,7 +254,10 @@ def get_hospital_city_coordinates(city):
 def add_hospital_distance(hospitals, patient_city):
     hospitals = hospitals.copy()
 
-    patient_lat, patient_lon = get_hospital_city_coordinates(patient_city)
+    patient_lat, patient_lon = get_hospital_city_coordinates(
+        patient_city,
+        allow_bare_county=True,
+    )
 
     if not has_valid_location(patient_lat, patient_lon):
         hospitals["distance_miles"] = "Unknown"
@@ -253,7 +269,10 @@ def add_hospital_distance(hospitals, patient_city):
 
     def row_distance(row):
         hospital_city = row.get("city_town", "")
-        hospital_lat, hospital_lon = get_hospital_city_coordinates(hospital_city)
+        hospital_lat, hospital_lon = get_hospital_city_coordinates(
+            hospital_city,
+            allow_bare_county=False,
+        )
 
         if not has_valid_location(hospital_lat, hospital_lon):
             return "Unknown"
@@ -407,16 +426,18 @@ def find_best_hospitals(
             matches["distance_miles"].astype(str) != "Unknown"
         ].copy()
 
-        if not known.empty:
-            known["distance_miles"] = known["distance_miles"].astype(float)
-            nearby = known[
-                known["distance_miles"] <= radius_miles
-            ].copy()
+        if known.empty:
+            return pd.DataFrame()
 
-            if not nearby.empty:
-                matches = nearby
-            else:
-                matches = known.head(20)
+        known["distance_miles"] = known["distance_miles"].astype(float)
+        nearby = known[
+            known["distance_miles"] <= radius_miles
+        ].copy()
+
+        if not nearby.empty:
+            matches = nearby
+        else:
+            matches = known.head(20)
 
     return summarize_hospitals(matches, top_n=top_n)
 

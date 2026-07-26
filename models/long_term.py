@@ -2,6 +2,10 @@ import pandas as pd
 from pathlib import Path
 from math import radians, sin, cos, sqrt, atan2
 from difflib import get_close_matches
+from models.location_resolver import (
+    is_explicit_county,
+    resolve_missouri_location,
+)
 
 
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -251,11 +255,20 @@ def get_condition_measure_ids(condition):
     ]
 
 
-def get_hospital_coordinates(city):
+def get_hospital_coordinates(city, allow_bare_county=True):
     city_clean = clean_city(city)
+    census_location = resolve_missouri_location(
+        city,
+        allow_bare_county=allow_bare_county,
+    )
+    if census_location is not None:
+        return census_location.coordinates
 
     if city_clean in FALLBACK_CITY_COORDINATES:
         return FALLBACK_CITY_COORDINATES[city_clean]
+
+    if is_explicit_county(city):
+        return None, None
 
     close = get_close_matches(
         city_clean,
@@ -273,7 +286,10 @@ def get_hospital_coordinates(city):
 def add_hospital_distance(hospitals, patient_city):
     hospitals = hospitals.copy()
 
-    patient_lat, patient_lon = get_hospital_coordinates(patient_city)
+    patient_lat, patient_lon = get_hospital_coordinates(
+        patient_city,
+        allow_bare_county=True,
+    )
 
     if not has_valid_location(patient_lat, patient_lon):
         hospitals["distance_miles"] = "Unknown"
@@ -285,7 +301,10 @@ def add_hospital_distance(hospitals, patient_city):
 
     def row_distance(row):
         hospital_city = row.get("city_town", "")
-        hospital_lat, hospital_lon = get_hospital_coordinates(hospital_city)
+        hospital_lat, hospital_lon = get_hospital_coordinates(
+            hospital_city,
+            allow_bare_county=False,
+        )
 
         if not has_valid_location(hospital_lat, hospital_lon):
             return "Unknown"
@@ -330,7 +349,7 @@ def filter_by_radius(hospitals, radius_miles=60):
     ].copy()
 
     if known.empty:
-        return hospitals
+        return hospitals.iloc[0:0].copy()
 
     known["distance_miles"] = known["distance_miles"].astype(float)
 
@@ -339,9 +358,9 @@ def filter_by_radius(hospitals, radius_miles=60):
     ].copy()
 
     if nearby.empty:
-        return pd.concat([known.head(5), unknown], ignore_index=True)
+        return known.head(5)
 
-    return pd.concat([nearby, unknown], ignore_index=True)
+    return nearby
 
 
 def get_numeric_score(row):
@@ -683,4 +702,3 @@ if __name__ == "__main__":
         ]
 
         print(results[columns_to_show])
-

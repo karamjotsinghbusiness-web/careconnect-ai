@@ -6,6 +6,8 @@ import pandas as pd
 import joblib
 from difflib import get_close_matches
 from models.provider_matcher import (
+    add_distance,
+    filter_by_radius,
     find_matching_providers,
     find_nearest_clinics,
     find_nearest_hospitals_or_clinics
@@ -366,25 +368,14 @@ def load_advocates():
 def find_advocates(patient_city, condition=None, top_n=5):
     advocates = load_advocates()
 
-    patient_city = normalize_text(patient_city)
-
     if "city" not in advocates.columns:
-        return advocates.head(top_n)
+        return pd.DataFrame()
 
-    advocates["city_clean"] = (
-        advocates["city"]
-        .astype(str)
-        .str.lower()
-        .str.strip()
+    advocates = add_distance(
+        advocates,
+        patient_city=patient_city,
     )
-
-    city_matches = advocates[
-        advocates["city_clean"] == patient_city
-    ].copy()
-
-    if not city_matches.empty:
-        return city_matches.head(top_n)
-
+    advocates = filter_by_radius(advocates, radius_miles=80)
     return advocates.head(top_n)
 
 

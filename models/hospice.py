@@ -3,6 +3,10 @@ import pandas as pd
 from pathlib import Path
 from math import radians, sin, cos, sqrt, atan2
 from difflib import get_close_matches
+from models.location_resolver import (
+    is_explicit_county,
+    resolve_missouri_location,
+)
 from models.sql_store import load_current_dataset
 
 
@@ -235,11 +239,20 @@ def get_condition_measure_ids(condition):
     return default_codes
 
 
-def get_hospice_coordinates(city):
+def get_hospice_coordinates(city, allow_bare_county=True):
     city_clean_value = clean_city(city)
+    census_location = resolve_missouri_location(
+        city,
+        allow_bare_county=allow_bare_county,
+    )
+    if census_location is not None:
+        return census_location.coordinates
 
     if city_clean_value in FALLBACK_CITY_COORDINATES:
         return FALLBACK_CITY_COORDINATES[city_clean_value]
+
+    if is_explicit_county(city):
+        return None, None
 
     close = get_close_matches(
         city_clean_value,
@@ -256,7 +269,10 @@ def get_hospice_coordinates(city):
 
 def add_hospice_distance(hospices, patient_city):
     hospices = hospices.copy()
-    patient_lat, patient_lon = get_hospice_coordinates(patient_city)
+    patient_lat, patient_lon = get_hospice_coordinates(
+        patient_city,
+        allow_bare_county=True,
+    )
 
     if not has_valid_location(patient_lat, patient_lon):
         hospices["distance_miles"] = "Unknown"
@@ -268,7 +284,10 @@ def add_hospice_distance(hospices, patient_city):
 
     def row_distance(row):
         hospice_city = row.get("city_town", "")
-        hospice_lat, hospice_lon = get_hospice_coordinates(hospice_city)
+        hospice_lat, hospice_lon = get_hospice_coordinates(
+            hospice_city,
+            allow_bare_county=False,
+        )
 
         if not has_valid_location(hospice_lat, hospice_lon):
             return "Unknown"
@@ -300,15 +319,15 @@ def filter_by_radius(hospices, radius_miles=60):
     unknown = hospices[hospices["distance_miles"].astype(str) == "Unknown"].copy()
 
     if known.empty:
-        return hospices
+        return hospices.iloc[0:0].copy()
 
     known["distance_miles"] = known["distance_miles"].astype(float)
     nearby = known[known["distance_miles"] <= radius_miles].copy()
 
     if nearby.empty:
-        return pd.concat([known.head(5), unknown], ignore_index=True)
+        return known.head(5)
 
-    return pd.concat([nearby, unknown], ignore_index=True)
+    return nearby
 
 
 def get_numeric_score(row):
