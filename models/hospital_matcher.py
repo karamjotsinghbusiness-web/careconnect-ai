@@ -1,3 +1,4 @@
+import os
 import pandas as pd
 from pathlib import Path
 from math import radians, sin, cos, sqrt, atan2
@@ -6,6 +7,12 @@ from difflib import get_close_matches
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 DATA_PATH = BASE_DIR / "data" / "missouri_healthcare_linked_dataset_with_expanded_symptoms.xlsx"
+PUBLIC_HOSPITAL_DATA_PATH = Path(
+    os.environ.get(
+        "PUBLIC_HOSPITAL_DATA_PATH",
+        BASE_DIR / "data" / "public" / "hospital_quality_missouri.csv",
+    )
+)
 
 
 FALLBACK_CITY_COORDINATES = {
@@ -97,10 +104,20 @@ def has_valid_location(lat, lon):
 
 
 def load_hospital_quality():
-    hospitals = pd.read_excel(
-        DATA_PATH,
-        sheet_name="Hospital_Quality"
-    )
+    if PUBLIC_HOSPITAL_DATA_PATH.exists():
+        hospitals = pd.read_csv(
+            PUBLIC_HOSPITAL_DATA_PATH,
+            dtype={
+                "facility_id": "string",
+                "zip_code": "string",
+                "telephone_number": "string",
+            },
+        )
+    else:
+        hospitals = pd.read_excel(
+            DATA_PATH,
+            sheet_name="Hospital_Quality"
+        )
 
     hospitals.columns = (
         hospitals.columns
@@ -108,6 +125,12 @@ def load_hospital_quality():
         .str.strip()
         .str.replace(" ", "_")
         .str.replace("/", "_")
+    )
+    hospitals = hospitals.rename(
+        columns={
+            "citytown": "city_town",
+            "countyparish": "county_parish",
+        }
     )
 
     return hospitals

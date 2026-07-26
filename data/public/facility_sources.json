@@ -1,0 +1,47 @@
+{
+  "generated_at": "2026-07-26T06:08:02+00:00",
+  "limitations": [
+    "CMS quality measures have source-defined measurement periods and are not real-time clinical outcomes.",
+    "A facility listing does not prove insurance coverage, network status, appointment availability, or suitability for a patient."
+  ],
+  "outputs": {
+    "hospice_quality": {
+      "path": "data/public/hospice_quality_missouri.csv",
+      "rows": 8710,
+      "sha256": "8374d15114c19674470ab4328b8813da14b4fcd5b51d2dc6aa4a321bdc9999da"
+    },
+    "hospital_quality": {
+      "path": "data/public/hospital_quality_missouri.csv",
+      "rows": 1512,
+      "sha256": "ecda9d43fef50f7f6fc0f721cd65bb158b46f39364ad6ae4a3fe5f365200fae3"
+    }
+  },
+  "quality_report": "data/public/facility_quality_report.json",
+  "schema_version": 1,
+  "sources": [
+    {
+      "agency": "Centers for Medicare & Medicaid Services (CMS)",
+      "api": "https://data.cms.gov/provider-data/api/1/datastore/query/632h-zaca/0",
+      "dataset": "Unplanned Hospital Visits - Hospital",
+      "dataset_id": "632h-zaca",
+      "intended_use": "Facility discovery and source-specific quality context; not diagnosis, treatment selection, coverage, or appointment availability.",
+      "landing_page": "https://data.cms.gov/provider-data/dataset/632h-zaca",
+      "modified": "2026-04-28",
+      "name": "hospital_quality",
+      "released": "2026-05-13",
+      "rows_downloaded": 1512
+    },
+    {
+      "agency": "Centers for Medicare & Medicaid Services (CMS)",
+      "api": "https://data.cms.gov/provider-data/api/1/datastore/query/252m-zfp9/0",
+      "dataset": "Hospice - Provider Data",
+      "dataset_id": "252m-zfp9",
+      "intended_use": "Facility discovery and source-specific quality context; not diagnosis, treatment selection, coverage, or appointment availability.",
+      "landing_page": "https://data.cms.gov/provider-data/dataset/252m-zfp9",
+      "modified": "2026-05-01",
+      "name": "hospice_quality",
+      "released": "2026-05-20",
+      "rows_downloaded": 8710
+    }
+  ]
+}
