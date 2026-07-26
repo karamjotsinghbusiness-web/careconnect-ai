@@ -3,6 +3,8 @@ import pandas as pd
 from pathlib import Path
 from math import radians, sin, cos, sqrt, atan2
 from difflib import get_close_matches
+from functools import lru_cache
+from models.provider_store import load_provider_data
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 EXPANDED_DATA_PATH = BASE_DIR / "data" / "missouri_healthcare_linked_dataset_with_expanded_symptoms.xlsx"
@@ -133,16 +135,9 @@ def has_valid_location(lat, lon):
     )
 
 
+@lru_cache(maxsize=1)
 def load_providers():
-    providers = pd.read_excel(DATA_PATH, sheet_name="Providers")
-
-    providers.columns = (
-        providers.columns
-        .str.lower()
-        .str.strip()
-    )
-
-    return providers
+    return load_provider_data(DATA_PATH)
 
 
 def safe_text_column(df, column_name):
@@ -156,60 +151,54 @@ def safe_text_column(df, column_name):
     return pd.Series([""] * len(df), index=df.index)
 
 
-def get_city_coordinates(patient_city):
-    providers = load_providers()
-    city_input = clean_city(patient_city)
+@lru_cache(maxsize=1)
+def _provider_city_coordinates():
+    providers = load_providers().copy()
+    coordinates = {}
 
-    if (
-        "city" in providers.columns
-        and "latitude" in providers.columns
-        and "longitude" in providers.columns
-    ):
-        providers["city_clean"] = providers["city"].apply(clean_city)
+    if not {
+        "city",
+        "latitude",
+        "longitude",
+    }.issubset(providers.columns):
+        return coordinates
 
-        city_matches = providers[
-            providers["city_clean"] == city_input
-        ].copy()
+    providers["city_clean"] = providers["city"].apply(clean_city)
+    providers["latitude"] = pd.to_numeric(
+        providers["latitude"],
+        errors="coerce",
+    )
+    providers["longitude"] = pd.to_numeric(
+        providers["longitude"],
+        errors="coerce",
+    )
+    providers = providers.dropna(subset=["latitude", "longitude"])
 
-        city_matches = city_matches.dropna(
-            subset=["latitude", "longitude"]
-        )
-
-        if not city_matches.empty:
-            lat = city_matches["latitude"].astype(float).mean()
-            lon = city_matches["longitude"].astype(float).mean()
-
-            return lat, lon
-
-        all_cities = (
-            providers["city_clean"]
-            .dropna()
-            .astype(str)
-            .unique()
-            .tolist()
-        )
-
-        close_city = get_close_matches(
-            city_input,
-            all_cities,
-            n=1,
-            cutoff=0.78
-        )
-
-        if close_city:
-            city_matches = providers[
-                providers["city_clean"] == close_city[0]
-            ].copy()
-
-            city_matches = city_matches.dropna(
-                subset=["latitude", "longitude"]
+    for city, rows in providers.groupby("city_clean"):
+        if city:
+            coordinates[city] = (
+                float(rows["latitude"].mean()),
+                float(rows["longitude"].mean()),
             )
+    return coordinates
 
-            if not city_matches.empty:
-                lat = city_matches["latitude"].astype(float).mean()
-                lon = city_matches["longitude"].astype(float).mean()
 
-                return lat, lon
+@lru_cache(maxsize=1024)
+def get_city_coordinates(patient_city):
+    city_input = clean_city(patient_city)
+    coordinates = _provider_city_coordinates()
+
+    if city_input in coordinates:
+        return coordinates[city_input]
+
+    close_city = get_close_matches(
+        city_input,
+        list(coordinates),
+        n=1,
+        cutoff=0.78
+    )
+    if close_city:
+        return coordinates[close_city[0]]
 
     if city_input in FALLBACK_CITY_COORDINATES:
         return FALLBACK_CITY_COORDINATES[city_input]
@@ -437,11 +426,46 @@ def get_specialty_search_terms(predicted_specialty):
     return specialty_map.get(specialty, [specialty])
 
 
+def add_specialty_relevance(df, predicted_specialty, search_terms):
+    """Rank primary specialty matches above broader fallback text matches."""
+
+    ranked = df.copy()
+    predicted = clean_text(predicted_specialty)
+    terms = [clean_text(term) for term in search_terms if clean_text(term)]
+
+    def relevance(row):
+        primary = clean_text(row.get("primary_specialty", ""))
+        specialty = clean_text(row.get("specialty", ""))
+        secondary = clean_text(row.get("secondary_specialty", ""))
+
+        if predicted and predicted in {primary, specialty}:
+            return 100
+        if any(term == primary or term == specialty for term in terms):
+            return 90
+        if any(term in primary or term in specialty for term in terms):
+            return 80
+        if predicted and predicted in secondary:
+            return 70
+        if any(term in secondary for term in terms):
+            return 60
+        return 10
+
+    ranked["specialty_relevance"] = ranked.apply(relevance, axis=1)
+    return ranked
+
+
 def clean_rural_clinic_rows(clinics):
     clinics = clinics.copy()
 
     if "clinic_name" not in clinics.columns:
         clinics["clinic_name"] = ""
+
+    if "provider_name" in clinics.columns:
+        clinics["clinic_name"] = clinics["clinic_name"].fillna("")
+        clinics.loc[
+            clinics["clinic_name"].astype(str).str.strip() == "",
+            "clinic_name"
+        ] = clinics["provider_name"]
 
     if "facility_name" in clinics.columns:
         clinics["clinic_name"] = clinics["clinic_name"].fillna("")
@@ -460,7 +484,14 @@ def clean_rural_clinic_rows(clinics):
     if "provider_name" in clinics.columns:
         clinics["provider_name"] = clinics["clinic_name"]
 
-    clinics["specialty"] = "Rural Health Clinic"
+    if "specialty" not in clinics.columns:
+        clinics["specialty"] = "Rural Health Clinic"
+    else:
+        clinics["specialty"] = clinics["specialty"].fillna("")
+        clinics.loc[
+            clinics["specialty"].astype(str).str.strip() == "",
+            "specialty"
+        ] = "Rural Health Clinic"
 
     return clinics
 
@@ -502,6 +533,12 @@ def find_matching_providers(
     if matches.empty:
         return pd.DataFrame()
 
+    matches = add_specialty_relevance(
+        matches,
+        predicted_specialty,
+        search_terms,
+    )
+
     matches = add_distance(
         matches,
         patient_latitude=patient_latitude,
@@ -513,6 +550,28 @@ def find_matching_providers(
         matches,
         radius_miles=radius_miles
     )
+
+    if "specialty_relevance" in matches.columns:
+        sort_columns = ["specialty_relevance"]
+        ascending = [False]
+        if "distance_miles" in matches.columns:
+            matches["_known_distance"] = (
+                matches["distance_miles"].astype(str) != "Unknown"
+            )
+            matches["_distance_sort"] = pd.to_numeric(
+                matches["distance_miles"],
+                errors="coerce",
+            )
+            sort_columns.extend(["_known_distance", "_distance_sort"])
+            ascending.extend([False, True])
+        matches = matches.sort_values(
+            sort_columns,
+            ascending=ascending,
+            kind="stable",
+        ).drop(
+            columns=["_known_distance", "_distance_sort"],
+            errors="ignore",
+        )
 
     return matches.head(top_n)
 
@@ -531,7 +590,11 @@ def find_nearest_clinics(
             providers["source"]
             .astype(str)
             .str.lower()
-            .str.contains("rural health clinics", na=False)
+            .str.contains(
+                r"rural health clinics|hrsa health center",
+                na=False,
+                regex=True,
+            )
         ].copy()
     else:
         clinics = pd.DataFrame()

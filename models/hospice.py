@@ -1,3 +1,4 @@
+import os
 import pandas as pd
 from pathlib import Path
 from math import radians, sin, cos, sqrt, atan2
@@ -6,6 +7,12 @@ from difflib import get_close_matches
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 DATA_PATH = BASE_DIR / "data" / "missouri_healthcare_linked_dataset_with_expanded_symptoms.xlsx"
+PUBLIC_HOSPICE_DATA_PATH = Path(
+    os.environ.get(
+        "PUBLIC_HOSPICE_DATA_PATH",
+        BASE_DIR / "data" / "public" / "hospice_quality_missouri.csv",
+    )
+)
 
 
 FALLBACK_CITY_COORDINATES = {
@@ -106,11 +113,14 @@ def normalize_columns(df):
 
     rename_map = {
         "cms_certification_number_(ccn)": "facility_id",
+        "cms_certification_number_ccn": "facility_id",
         "cms_certification_number": "facility_id",
         "ccn": "facility_id",
         "address_line_1": "address",
+        "citytown": "city_town",
         "city": "city_town",
         "zip": "zip_code",
+        "countyparish": "county_parish",
         "county": "county_parish",
         "measure_code": "measure_id",
         "telephone": "telephone_number",
@@ -128,7 +138,17 @@ def normalize_columns(df):
 
 
 def load_hospice():
-    hospice = pd.read_excel(DATA_PATH, sheet_name="Hospice")
+    if PUBLIC_HOSPICE_DATA_PATH.exists():
+        hospice = pd.read_csv(
+            PUBLIC_HOSPICE_DATA_PATH,
+            dtype={
+                "cms_certification_number_ccn": "string",
+                "zip_code": "string",
+                "telephone_number": "string",
+            },
+        )
+    else:
+        hospice = pd.read_excel(DATA_PATH, sheet_name="Hospice")
     return normalize_columns(hospice)
 
 

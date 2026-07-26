@@ -1,0 +1,33 @@
+{
+  "checked_at": "2026-07-26T06:08:22+00:00",
+  "datasets": {
+    "hospice_quality": {
+      "columns": 15,
+      "duplicate_facility_measure_rows": 0,
+      "errors": [],
+      "facilities": 130,
+      "measures": 67,
+      "missing_facility_ids": 0,
+      "missing_facility_names": 0,
+      "missing_score_rows": 0,
+      "rows": 8710,
+      "status": "passed",
+      "wrong_state_rows": 0
+    },
+    "hospital_quality": {
+      "columns": 20,
+      "duplicate_facility_measure_rows": 0,
+      "errors": [],
+      "facilities": 108,
+      "measures": 14,
+      "missing_facility_ids": 0,
+      "missing_facility_names": 0,
+      "missing_score_rows": 0,
+      "rows": 1512,
+      "status": "passed",
+      "wrong_state_rows": 0
+    }
+  },
+  "generated_at": "2026-07-26T06:08:02+00:00",
+  "status": "passed"
+}

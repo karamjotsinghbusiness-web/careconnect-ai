@@ -1,0 +1,41 @@
+{
+  "generated_at": "2026-07-26T06:11:22+00:00",
+  "intended_use": "Provider and health-center discovery for Missouri care navigation.",
+  "output": {
+    "path": "data/public/providers_missouri.csv",
+    "rows": 63272,
+    "sha256": "1ded907fdd319036f88d5b228183a2119b8a10217f17ed79de9704bb8c64955a"
+  },
+  "prohibited_inferences": [
+    "Do not use this file to diagnose or choose treatment.",
+    "Do not infer that a provider is accepting new patients.",
+    "Do not infer insurance network status or benefit coverage.",
+    "Do not infer appointment availability."
+  ],
+  "quality_report": "data/public/provider_quality_report.json",
+  "schema_version": 1,
+  "sources": [
+    {
+      "agency": "Centers for Medicare & Medicaid Services (CMS)",
+      "api": "https://data.cms.gov/provider-data/api/1/datastore/query/mj5m-pzi6/0",
+      "dataset": "Doctors and Clinicians National Downloadable File",
+      "dataset_id": "mj5m-pzi6",
+      "landing_page": "https://data.cms.gov/provider-data/dataset/mj5m-pzi6",
+      "modified": "2026-06-26",
+      "released": "2026-07-09",
+      "rows_downloaded": 63019,
+      "usage": "Clinician identity, specialty, practice city/ZIP, telephone, and group/facility affiliation."
+    },
+    {
+      "agency": "Health Resources and Services Administration (HRSA)",
+      "dataset": "Health Center Service Delivery and Look-Alike Sites",
+      "download": "https://data.hrsa.gov/DataDownload/DD_Files/Health_Center_Service_Delivery_and_LookAlike_Sites.csv",
+      "download_bytes": 13803372,
+      "landing_page": "https://data.hrsa.gov/data/download?titleFilter=Health+Center",
+      "record_date": "07/24/2026",
+      "rows_downloaded": 486,
+      "usage": "Active health-center site identity, location, phone, organization, and HRSA-published coordinates.",
+      "usage_limitations": "None, according to the HRSA catalog."
+    }
+  ]
+}
