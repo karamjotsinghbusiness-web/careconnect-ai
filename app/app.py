@@ -24,6 +24,10 @@ from models.provider_discovery import (
     merge_supplemental,
     normalize_condition,
 )
+from models.sql_store import public_data_database_status
+from scripts.import_public_data_postgres import (
+    initialize_public_data_database,
+)
 try:
     from app.insurance import assess_insurance, add_network_verification_status
     from app.clinical_intake import structure_clinical_intake
@@ -140,6 +144,7 @@ try:
 except Exception as exc:
     logger.warning("Care coordination storage unavailable during startup: %s", type(exc).__name__)
 initialize_firebase_admin()
+public_data_database_startup = initialize_public_data_database()
 
 if os.environ.get("ALLOW_REAL_PHI", "false").lower() == "true" and not real_phi_enabled():
     record_security_event(
@@ -644,7 +649,19 @@ def home():
     return json_response({
         "message": "CareConnect AI backend is running",
         "real_phi_enabled": real_phi_enabled(),
-        "openai_phi_enabled": openai_phi_enabled()
+        "openai_phi_enabled": openai_phi_enabled(),
+        "public_data_storage": public_data_database_startup.get(
+            "storage_mode",
+            "validated_files",
+        ),
+    })
+
+
+@app.route("/data/status", methods=["GET"])
+def data_status():
+    return json_response({
+        "success": True,
+        "public_data": public_data_database_status(),
     })
 
 

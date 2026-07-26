@@ -3,6 +3,7 @@ import pandas as pd
 from pathlib import Path
 from math import radians, sin, cos, sqrt, atan2
 from difflib import get_close_matches
+from models.sql_store import load_current_dataset
 
 
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -13,6 +14,32 @@ PUBLIC_HOSPITAL_DATA_PATH = Path(
         BASE_DIR / "data" / "public" / "hospital_quality_missouri.csv",
     )
 )
+
+HOSPITAL_DATABASE_QUERY = """
+SELECT
+    facility_id,
+    facility_name,
+    address,
+    city_town,
+    state,
+    zip_code,
+    county_parish,
+    telephone_number,
+    measure_id,
+    measure_name,
+    compared_to_national,
+    denominator,
+    score,
+    lower_estimate,
+    higher_estimate,
+    number_of_patients,
+    number_of_patients_returned,
+    footnote,
+    start_date,
+    end_date
+FROM careconnect.hospital_quality
+ORDER BY facility_id, measure_id
+"""
 
 
 FALLBACK_CITY_COORDINATES = {
@@ -104,7 +131,11 @@ def has_valid_location(lat, lon):
 
 
 def load_hospital_quality():
-    if PUBLIC_HOSPITAL_DATA_PATH.exists():
+    hospitals = load_current_dataset(
+        "hospital_quality_missouri",
+        HOSPITAL_DATABASE_QUERY,
+    )
+    if hospitals is None and PUBLIC_HOSPITAL_DATA_PATH.exists():
         hospitals = pd.read_csv(
             PUBLIC_HOSPITAL_DATA_PATH,
             dtype={
@@ -113,7 +144,7 @@ def load_hospital_quality():
                 "telephone_number": "string",
             },
         )
-    else:
+    elif hospitals is None:
         hospitals = pd.read_excel(
             DATA_PATH,
             sheet_name="Hospital_Quality"
