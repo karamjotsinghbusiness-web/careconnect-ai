@@ -8,6 +8,11 @@ from pathlib import Path
 import pandas as pd
 
 from models.public_provider_data import PROVIDER_COLUMNS
+from models.sql_store import (
+    dataset_is_current,
+    env_true,
+    get_database_engine,
+)
 
 
 logger = logging.getLogger(__name__)
@@ -42,10 +47,6 @@ ORDER BY provider_id
 """
 
 
-def _env_true(name, default="false"):
-    return os.environ.get(name, default).strip().lower() in {"1", "true", "yes", "on"}
-
-
 @lru_cache(maxsize=2)
 def _load_public_csv(csv_path, modified_time):
     del modified_time
@@ -65,7 +66,7 @@ def _load_public_csv(csv_path, modified_time):
 
 
 def _with_public_provider_data(providers):
-    if not _env_true("ENABLE_PUBLIC_PROVIDER_DATA", "true"):
+    if not env_true("ENABLE_PUBLIC_PROVIDER_DATA", "true"):
         return providers
 
     csv_path = Path(
@@ -75,7 +76,7 @@ def _with_public_provider_data(providers):
         )
     )
     if not csv_path.exists():
-        if _env_true("REQUIRE_PUBLIC_PROVIDER_DATA"):
+        if env_true("REQUIRE_PUBLIC_PROVIDER_DATA"):
             raise FileNotFoundError(
                 f"Required public provider file not found: {csv_path}"
             )
@@ -104,29 +105,32 @@ def _with_public_provider_data(providers):
 
 @lru_cache(maxsize=1)
 def _load_from_postgres(database_url):
-    from sqlalchemy import create_engine, text
+    from sqlalchemy import text
 
-    engine = create_engine(
-        database_url,
-        pool_pre_ping=True,
-        pool_size=5,
-        max_overflow=5,
-        pool_recycle=1800,
-    )
+    engine = get_database_engine(database_url)
     with engine.connect() as connection:
         providers = pd.read_sql_query(text(PROVIDER_QUERY), connection)
+        includes_public_data = dataset_is_current(
+            connection,
+            "providers_missouri_public",
+        )
     logger.info("Loaded %s active providers from PostgreSQL", len(providers))
-    return providers
+    return providers, includes_public_data
 
 
 def load_provider_data(excel_path):
     database_url = os.environ.get("DATABASE_URL", "").strip()
     if database_url:
         try:
-            providers = _load_from_postgres(database_url).copy()
+            providers, includes_public_data = _load_from_postgres(
+                database_url
+            )
+            providers = providers.copy()
+            if includes_public_data:
+                return providers
             return _with_public_provider_data(providers)
         except Exception:
-            if _env_true("REQUIRE_DATABASE"):
+            if env_true("REQUIRE_DATABASE"):
                 raise
             logger.exception("PostgreSQL provider load failed; using the Excel fallback")
 

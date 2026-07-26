@@ -3,6 +3,7 @@ import pandas as pd
 from pathlib import Path
 from math import radians, sin, cos, sqrt, atan2
 from difflib import get_close_matches
+from models.sql_store import load_current_dataset
 
 
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -13,6 +14,27 @@ PUBLIC_HOSPICE_DATA_PATH = Path(
         BASE_DIR / "data" / "public" / "hospice_quality_missouri.csv",
     )
 )
+
+HOSPICE_DATABASE_QUERY = """
+SELECT
+    facility_id,
+    facility_name,
+    address,
+    address_line_2,
+    city_town,
+    state,
+    zip_code,
+    county_parish,
+    telephone_number,
+    cms_region,
+    measure_id,
+    measure_name,
+    score,
+    footnote,
+    measure_date_range
+FROM careconnect.hospice_quality
+ORDER BY facility_id, measure_id
+"""
 
 
 FALLBACK_CITY_COORDINATES = {
@@ -138,7 +160,11 @@ def normalize_columns(df):
 
 
 def load_hospice():
-    if PUBLIC_HOSPICE_DATA_PATH.exists():
+    hospice = load_current_dataset(
+        "hospice_quality_missouri",
+        HOSPICE_DATABASE_QUERY,
+    )
+    if hospice is None and PUBLIC_HOSPICE_DATA_PATH.exists():
         hospice = pd.read_csv(
             PUBLIC_HOSPICE_DATA_PATH,
             dtype={
@@ -147,7 +173,7 @@ def load_hospice():
                 "telephone_number": "string",
             },
         )
-    else:
+    elif hospice is None:
         hospice = pd.read_excel(DATA_PATH, sheet_name="Hospice")
     return normalize_columns(hospice)
 
