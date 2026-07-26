@@ -365,7 +365,13 @@ def load_advocates():
     return advocates
 
 
-def find_advocates(patient_city, condition=None, top_n=5):
+def find_advocates(
+    patient_city,
+    condition=None,
+    top_n=5,
+    patient_latitude=None,
+    patient_longitude=None,
+):
     advocates = load_advocates()
 
     if "city" not in advocates.columns:
@@ -374,6 +380,8 @@ def find_advocates(patient_city, condition=None, top_n=5):
     advocates = add_distance(
         advocates,
         patient_city=patient_city,
+        patient_latitude=patient_latitude,
+        patient_longitude=patient_longitude,
     )
     advocates = filter_by_radius(advocates, radius_miles=80)
     return advocates.head(top_n)
@@ -388,7 +396,9 @@ def recommend(patient):
     advocates = find_advocates(
         patient_city=patient["city"],
         condition=patient.get("condition"),
-        top_n=5
+        top_n=5,
+        patient_latitude=patient_latitude,
+        patient_longitude=patient_longitude,
     )
 
     nearest_clinics = find_nearest_clinics(
@@ -429,14 +439,18 @@ def recommend(patient):
         patient_city=patient["city"],
         condition=patient.get("condition", ""),
         top_n=5,
-        radius_miles=60
+        radius_miles=60,
+        patient_latitude=patient_latitude,
+        patient_longitude=patient_longitude,
     )
     recommended_long_term = find_best_long_term_hospitals(
-        patient_city = patient["city"],
-        condition = patient.get("condition", ""),
-        top_n = 5,
-        radius_miles= 80    
-                    )
+        patient_city=patient["city"],
+        condition=patient.get("condition", ""),
+        top_n=5,
+        radius_miles=80,
+        patient_latitude=patient_latitude,
+        patient_longitude=patient_longitude,
+    )
 
     if predicted_specialty is None:
         predicted_specialty = "No exact AI specialty match"

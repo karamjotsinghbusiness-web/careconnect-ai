@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import csv
+import math
 import re
 from dataclasses import dataclass
 from functools import lru_cache
@@ -112,3 +113,50 @@ def resolve_missouri_location(value, allow_bare_county=False):
         return missouri_counties().get(normalized)
 
     return None
+
+
+def _distance_miles(latitude, longitude, location):
+    """Return straight-line miles from coordinates to a Census location."""
+    radius_miles = 3958.8
+    lat1, lon1, lat2, lon2 = map(
+        math.radians,
+        [
+            float(latitude),
+            float(longitude),
+            location.latitude,
+            location.longitude,
+        ],
+    )
+    dlat = lat2 - lat1
+    dlon = lon2 - lon1
+    value = (
+        math.sin(dlat / 2) ** 2
+        + math.cos(lat1) * math.cos(lat2) * math.sin(dlon / 2) ** 2
+    )
+    return radius_miles * 2 * math.atan2(math.sqrt(value), math.sqrt(1 - value))
+
+
+def nearest_missouri_place(latitude, longitude, max_distance_miles=75):
+    """Resolve coordinates to the nearest Census place within the service area."""
+    try:
+        latitude = float(latitude)
+        longitude = float(longitude)
+    except (TypeError, ValueError):
+        return None
+
+    if not math.isfinite(latitude) or not math.isfinite(longitude):
+        return None
+    if not -90 <= latitude <= 90 or not -180 <= longitude <= 180:
+        return None
+
+    nearest = None
+    nearest_distance = float("inf")
+    for location in missouri_places().values():
+        distance = _distance_miles(latitude, longitude, location)
+        if distance < nearest_distance:
+            nearest = location
+            nearest_distance = distance
+
+    if nearest is None or nearest_distance > max_distance_miles:
+        return None
+    return nearest

@@ -251,13 +251,21 @@ def get_hospital_city_coordinates(city, allow_bare_county=True):
     return None, None
 
 
-def add_hospital_distance(hospitals, patient_city):
+def add_hospital_distance(
+    hospitals,
+    patient_city,
+    patient_latitude=None,
+    patient_longitude=None,
+):
     hospitals = hospitals.copy()
 
-    patient_lat, patient_lon = get_hospital_city_coordinates(
-        patient_city,
-        allow_bare_county=True,
-    )
+    if has_valid_location(patient_latitude, patient_longitude):
+        patient_lat, patient_lon = float(patient_latitude), float(patient_longitude)
+    else:
+        patient_lat, patient_lon = get_hospital_city_coordinates(
+            patient_city,
+            allow_bare_county=True,
+        )
 
     if not has_valid_location(patient_lat, patient_lon):
         hospitals["distance_miles"] = "Unknown"
@@ -394,7 +402,9 @@ def find_best_hospitals(
     patient_city,
     condition,
     top_n=5,
-    radius_miles=60
+    radius_miles=60,
+    patient_latitude=None,
+    patient_longitude=None,
 ):
     hospitals = load_hospital_quality()
 
@@ -418,7 +428,9 @@ def find_best_hospitals(
 
     matches = add_hospital_distance(
         matches,
-        patient_city=patient_city
+        patient_city=patient_city,
+        patient_latitude=patient_latitude,
+        patient_longitude=patient_longitude,
     )
 
     if "distance_miles" in matches.columns:

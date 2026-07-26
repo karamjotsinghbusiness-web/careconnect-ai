@@ -267,12 +267,20 @@ def get_hospice_coordinates(city, allow_bare_county=True):
     return None, None
 
 
-def add_hospice_distance(hospices, patient_city):
+def add_hospice_distance(
+    hospices,
+    patient_city,
+    patient_latitude=None,
+    patient_longitude=None,
+):
     hospices = hospices.copy()
-    patient_lat, patient_lon = get_hospice_coordinates(
-        patient_city,
-        allow_bare_county=True,
-    )
+    if has_valid_location(patient_latitude, patient_longitude):
+        patient_lat, patient_lon = float(patient_latitude), float(patient_longitude)
+    else:
+        patient_lat, patient_lon = get_hospice_coordinates(
+            patient_city,
+            allow_bare_county=True,
+        )
 
     if not has_valid_location(patient_lat, patient_lon):
         hospices["distance_miles"] = "Unknown"
@@ -522,7 +530,14 @@ def summarize_hospices(hospices, top_n=5):
     return summary.head(top_n)
 
 
-def find_best_hospices(patient_city, condition, top_n=5, radius_miles=60):
+def find_best_hospices(
+    patient_city,
+    condition,
+    top_n=5,
+    radius_miles=60,
+    patient_latitude=None,
+    patient_longitude=None,
+):
     hospices = load_hospice()
 
     if hospices.empty or "measure_id" not in hospices.columns:
@@ -564,7 +579,9 @@ def find_best_hospices(patient_city, condition, top_n=5, radius_miles=60):
 
     matches = add_hospice_distance(
         matches,
-        patient_city=patient_city
+        patient_city=patient_city,
+        patient_latitude=patient_latitude,
+        patient_longitude=patient_longitude,
     )
 
     matches = filter_by_radius(
