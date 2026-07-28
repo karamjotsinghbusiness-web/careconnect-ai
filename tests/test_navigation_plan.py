@@ -27,6 +27,9 @@ class NavigationPlanTests(unittest.TestCase):
                 "city": "Rolla",
                 "distance_miles": 1.4,
                 "phone": "555-0101",
+                "latitude": 37.95,
+                "longitude": -91.77,
+                "source": "Validated public demo source",
             },
         ])
         insurance = assess_insurance({
@@ -53,6 +56,14 @@ class NavigationPlanTests(unittest.TestCase):
         self.assertEqual(plan["priority"]["id"], "closest")
         self.assertEqual(plan["care_options"][0]["name"], "Closer Demo Clinic")
         self.assertEqual(plan["care_options"][0]["distance_miles"], 1.4)
+        self.assertEqual(
+            plan["care_options"][0]["destination"],
+            {"latitude": 37.95, "longitude": -91.77},
+        )
+        self.assertEqual(
+            plan["care_options"][0]["data_source"],
+            "Validated public demo source",
+        )
 
     def test_plan_is_actionable_without_claiming_verification(self):
         plan = self.build_plan()

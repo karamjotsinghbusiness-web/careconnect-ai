@@ -446,10 +446,7 @@ def find_best_hospitals(
             known["distance_miles"] <= radius_miles
         ].copy()
 
-        if not nearby.empty:
-            matches = nearby
-        else:
-            matches = known.head(20)
+        matches = nearby
 
     return summarize_hospitals(matches, top_n=top_n)
 

@@ -332,9 +332,6 @@ def filter_by_radius(hospices, radius_miles=60):
     known["distance_miles"] = known["distance_miles"].astype(float)
     nearby = known[known["distance_miles"] <= radius_miles].copy()
 
-    if nearby.empty:
-        return known.head(5)
-
     return nearby
 
 

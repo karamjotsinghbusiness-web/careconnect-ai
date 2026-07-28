@@ -365,9 +365,6 @@ def filter_by_radius(hospitals, radius_miles=60):
         known["distance_miles"] <= radius_miles
     ].copy()
 
-    if nearby.empty:
-        return known.head(5)
-
     return nearby
 
 

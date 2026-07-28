@@ -102,6 +102,7 @@ Top hospice providers: {hospice_names}
             instructions=instructions,
             input=prompt,
             max_output_tokens=350,
+            store=False,
             timeout=_explanation_timeout()
         )
 

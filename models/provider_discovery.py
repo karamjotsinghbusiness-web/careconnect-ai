@@ -163,7 +163,7 @@ def normalize_condition(condition):
 def _discover_supplemental_resources(city, specialty, condition, limit=3):
     """Find public listings to supplement, never replace, the local dataset."""
     api_key = os.getenv("OPENAI_API_KEY")
-    if not api_key or os.getenv("ENABLE_OPENAI_PROVIDER_SEARCH", "true").lower() != "true":
+    if not api_key or os.getenv("ENABLE_OPENAI_PROVIDER_SEARCH", "false").lower() != "true":
         return pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
 
     prompt = f"""
@@ -222,7 +222,7 @@ This is navigation information, not diagnosis. Return ONLY valid JSON with this 
 def discover_supplemental_resources(city, specialty, condition, limit=3):
     """Run public-resource search with a hard wall-clock request budget."""
     if not os.getenv("OPENAI_API_KEY") or os.getenv(
-        "ENABLE_OPENAI_PROVIDER_SEARCH", "true"
+        "ENABLE_OPENAI_PROVIDER_SEARCH", "false"
     ).lower() != "true":
         return pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
 
