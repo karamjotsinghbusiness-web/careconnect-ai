@@ -4,7 +4,6 @@ import logging
 from pathlib import Path
 import math
 import json
-import random
 from concurrent.futures import ThreadPoolExecutor
 from datetime import date, datetime
 
@@ -22,7 +21,6 @@ from models.ai_explainer import explain_recommendation
 from models.location_resolver import nearest_missouri_place
 from models.provider_discovery import (
     discover_supplemental_resources,
-    merge_supplemental,
     normalize_condition,
 )
 from models.sql_store import public_data_database_status
@@ -107,6 +105,8 @@ SUPPLEMENTAL_EXECUTOR = ThreadPoolExecutor(max_workers=2, thread_name_prefix="su
 DEFAULT_ALLOWED_ORIGINS = [
     "https://careconnectai-19ace.firebaseapp.com",
     "https://careconnectai-19ace.web.app",
+    "https://careconnect-doctors-19ace.firebaseapp.com",
+    "https://careconnect-doctors-19ace.web.app",
     "http://localhost:5500",
     "http://127.0.0.1:5500",
     "http://localhost:5000",
@@ -331,8 +331,6 @@ def confidence_score(
 
     if len(recommended_long_term) > 0:
         score += 7
-
-    score += random.randint(0, 3)
 
     return min(score, 98)
 
@@ -1107,27 +1105,16 @@ def get_recommendation():
             supplemental_providers = pd.DataFrame()
             supplemental_clinics = pd.DataFrame()
             supplemental_advocates = pd.DataFrame()
-        providers = merge_supplemental(
-            providers,
-            supplemental_providers,
-            ("provider_name", "facility_name"),
-            dataset_limit=5,
-            supplemental_limit=supplemental_limit,
-        )
-        nearest_clinics = merge_supplemental(
-            nearest_clinics,
-            supplemental_clinics,
-            ("clinic_name", "provider_name", "facility_name"),
-            dataset_limit=5,
-            supplemental_limit=supplemental_limit,
-        )
-        advocates = merge_supplemental(
-            advocates,
-            supplemental_advocates,
-            ("advocate_name", "provider_name"),
-            dataset_limit=5,
-            supplemental_limit=supplemental_limit,
-        )
+        # Web-search listings have not passed the same geocoding and source
+        # validation as the public datasets. Keep them out of distance-ranked
+        # care options and return them only as clearly unverified leads.
+        supplemental_resources = {
+            "providers": supplemental_providers,
+            "clinics": supplemental_clinics,
+            "advocates": supplemental_advocates,
+            "verification_status": "unverified",
+            "included_in_ranked_results": False,
+        }
 
         providers = add_network_verification_status(providers, insurance)
         nearest_clinics = add_network_verification_status(nearest_clinics, insurance)
@@ -1220,15 +1207,15 @@ def get_recommendation():
             message = "This symptom was not found in the AI model, so nearby clinics, fallback care, hospital options, and long-term hospital options are shown instead."
 
         if os.environ.get("OPENAI_API_KEY") and os.environ.get(
-            "ENABLE_OPENAI_PROVIDER_SEARCH", "true"
+            "ENABLE_OPENAI_PROVIDER_SEARCH", "false"
         ).lower() == "true":
             # Supplemental web search already used the request's OpenAI time
             # budget. Avoid a second sequential API call that can push Railway
             # beyond its 30-second edge limit.
             ai_explanation = (
                 f"CareConnect matched the fictional concern to {specialty} and organized nearby "
-                "care options from the dataset and available public listings. Confirm supplemental "
-                "web results directly before use and contact a licensed healthcare professional for "
+                "care options from validated datasets. Supplemental web leads stay separate and "
+                "must be confirmed directly. Contact a licensed healthcare professional for "
                 "medical decisions."
             )
         else:
@@ -1302,6 +1289,7 @@ def get_recommendation():
                 ),
                 "saved": False,
             },
+            "supplemental_resources": supplemental_resources,
             "providers": providers,
             "advocates": advocates,
             "nearest_clinics": nearest_clinics,
@@ -1369,6 +1357,13 @@ def get_recommendation():
                 "summary": "Insurance assessment is unavailable because the recommendation request failed.",
                 "missing_for_verification": [],
                 "next_steps": []
+            },
+            "supplemental_resources": {
+                "providers": [],
+                "clinics": [],
+                "advocates": [],
+                "verification_status": "unavailable",
+                "included_in_ranked_results": False,
             },
             "providers": [],
             "advocates": [],

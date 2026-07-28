@@ -81,6 +81,13 @@ class MissouriLocationRankingTests(unittest.TestCase):
         )
         self.assertTrue(filter_by_radius(unknown_rows).empty)
 
+    def test_radius_filter_never_substitutes_a_far_away_provider(self):
+        far_rows = pd.DataFrame([
+            {"provider_name": "Five Hours Away", "distance_miles": 250.0},
+        ])
+
+        self.assertTrue(filter_by_radius(far_rows, radius_miles=30).empty)
+
     def test_advocate_fallback_is_distance_ranked_instead_of_file_order(self):
         advocates = find_advocates("Worth County", top_n=5)
 

@@ -312,9 +312,6 @@ def filter_by_radius(df, radius_miles=30):
         known_distance["distance_miles"] <= radius_miles
     ].copy()
 
-    if nearby.empty:
-        return known_distance.head(5)
-
     return nearby
 
 

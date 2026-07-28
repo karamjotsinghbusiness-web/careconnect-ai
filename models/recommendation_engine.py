@@ -4,6 +4,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 sys.path.append(str(BASE_DIR))
 import pandas as pd
 import joblib
+import re
 from difflib import get_close_matches
 from models.provider_matcher import (
     add_distance,
@@ -45,6 +46,8 @@ NON_URGENT_CONDITION_TO_SPECIALTY = {
     "nausea": "Family Practice",
     "diarrhea": "Family Practice",
     "constipation": "Family Practice",
+    "heartburn": "Family Practice",
+    "acid reflux": "Family Practice",
     "fever": "Family Practice",
     "cough": "Family Practice",
     "sore throat": "Family Practice",
@@ -64,6 +67,10 @@ NON_URGENT_CONDITION_TO_SPECIALTY = {
     "burning urination": "Family Practice",
     "uti": "Family Practice",
     "urinary pain": "Family Practice",
+    "routine checkup": "Family Practice",
+    "annual checkup": "Family Practice",
+    "primary care checkup": "Family Practice",
+    "wellness visit": "Family Practice",
 
     "thyroid": "Endocrinology",
     "thyroid problem": "Endocrinology",
@@ -119,6 +126,8 @@ SYMPTOM_KEYWORDS_TO_SPECIALTY = [
             "nausea",
             "diarrhea",
             "constipation",
+            "heartburn",
+            "reflux",
             "fever",
             "cough",
             "throat",
@@ -208,7 +217,40 @@ SYMPTOM_KEYWORDS_TO_SPECIALTY = [
 
 
 def normalize_text(value):
-    return str(value).lower().strip()
+    return " ".join(
+        re.sub(r"[^a-z0-9']+", " ", str(value).lower()).split()
+    )
+
+
+def _contains_phrase(text, phrase):
+    normalized_text = normalize_text(text)
+    normalized_phrase = normalize_text(phrase)
+    if not normalized_text or not normalized_phrase:
+        return False
+    pattern = rf"(?<![a-z0-9]){re.escape(normalized_phrase)}(?![a-z0-9])"
+    return re.search(pattern, normalized_text) is not None
+
+
+def _contains_keyword(text, keyword):
+    normalized_text = normalize_text(text)
+    normalized_keyword = normalize_text(keyword)
+    if not normalized_text or not normalized_keyword:
+        return False
+    if " " in normalized_keyword:
+        return _contains_phrase(normalized_text, normalized_keyword)
+    stem_keywords = {
+        "allerg",
+        "depress",
+        "dizzy",
+        "hyperthyroid",
+        "hypothyroid",
+        "vomit",
+    }
+    suffix = r"[a-z0-9]*" if normalized_keyword in stem_keywords else ""
+    return re.search(
+        rf"(?<![a-z0-9]){re.escape(normalized_keyword)}{suffix}(?![a-z0-9])",
+        normalized_text,
+    ) is not None
 
 
 def manual_specialty_match(condition):
@@ -230,11 +272,11 @@ def manual_specialty_match(condition):
         return NON_URGENT_CONDITION_TO_SPECIALTY[close[0]]
 
     for key, specialty in NON_URGENT_CONDITION_TO_SPECIALTY.items():
-        if key in condition or condition in key:
+        if _contains_phrase(condition, key):
             return specialty
 
     for keywords, specialty in SYMPTOM_KEYWORDS_TO_SPECIALTY:
-        if any(keyword in condition for keyword in keywords):
+        if any(_contains_keyword(condition, keyword) for keyword in keywords):
             return specialty
 
     return None
@@ -260,7 +302,6 @@ def fix_value(column, value):
     )
 
     if match:
-        print(f"Changed '{value}' to closest match: '{match[0]}'")
         return match[0]
 
     return None
@@ -273,7 +314,7 @@ def get_condition_suggestions(user_text, limit=5):
 
     manual_matches = [
         condition for condition in NON_URGENT_CONDITION_TO_SPECIALTY.keys()
-        if user_text_clean in condition or condition in user_text_clean
+        if _contains_phrase(user_text_clean, condition)
     ]
 
     keyword_specialty = manual_specialty_match(user_text)
@@ -283,7 +324,7 @@ def get_condition_suggestions(user_text, limit=5):
 
     direct_matches = [
         condition for condition in allowed_conditions
-        if user_text_clean in str(condition).lower()
+        if _contains_phrase(str(condition), user_text_clean)
     ]
 
     close_manual = get_close_matches(
@@ -313,10 +354,6 @@ def predict_specialty(patient):
     manual_match = manual_specialty_match(patient.get("condition", ""))
 
     if manual_match is not None:
-        print(
-            f"Using manual symptom mapping: "
-            f"{patient.get('condition')} -> {manual_match}"
-        )
         return manual_match
 
     patient_copy = patient.copy()
@@ -435,22 +472,29 @@ def recommend(patient):
         top_n=5
     )
 
-    recommended_hospitals = find_best_hospitals(
-        patient_city=patient["city"],
-        condition=patient.get("condition", ""),
-        top_n=5,
-        radius_miles=60,
-        patient_latitude=patient_latitude,
-        patient_longitude=patient_longitude,
-    )
-    recommended_long_term = find_best_long_term_hospitals(
-        patient_city=patient["city"],
-        condition=patient.get("condition", ""),
-        top_n=5,
-        radius_miles=80,
-        patient_latitude=patient_latitude,
-        patient_longitude=patient_longitude,
-    )
+    try:
+        recommended_hospitals = find_best_hospitals(
+            patient_city=patient["city"],
+            condition=patient.get("condition", ""),
+            top_n=5,
+            radius_miles=60,
+            patient_latitude=patient_latitude,
+            patient_longitude=patient_longitude,
+        )
+    except (FileNotFoundError, ValueError, KeyError):
+        recommended_hospitals = pd.DataFrame()
+
+    try:
+        recommended_long_term = find_best_long_term_hospitals(
+            patient_city=patient["city"],
+            condition=patient.get("condition", ""),
+            top_n=5,
+            radius_miles=80,
+            patient_latitude=patient_latitude,
+            patient_longitude=patient_longitude,
+        )
+    except (FileNotFoundError, ValueError, KeyError):
+        recommended_long_term = pd.DataFrame()
 
     if predicted_specialty is None:
         predicted_specialty = "No exact AI specialty match"

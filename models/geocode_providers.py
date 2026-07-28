@@ -10,7 +10,7 @@ import googlemaps
 # SECURITY: never hardcode API keys in source. Set this in your environment
 # (e.g. a .env file loaded by python-dotenv, or your host's secret manager),
 # and make sure that .env is in .gitignore so it never reaches version control.
-API_KEY = os.env.get("GOOGLE_MAPS_API_KEY")
+API_KEY = os.environ.get("GOOGLE_MAPS_API_KEY")
 
 if not API_KEY:
     sys.exit(
@@ -18,10 +18,8 @@ if not API_KEY:
         "before running this script (do not hardcode it in the file)."
     )
 
-# NOTE: the key that used to be hardcoded here
-# (AIzaSyDms8HF9oyB6tRUAp7ZukLLkYhHWCjWYDY) has been exposed publicly.
-# Revoke/regenerate it in the Google Cloud Console immediately, and also
-# restrict the new key's usage to the Geocoding API + your server's IP.
+# Rotate any key that was previously committed or shared, then restrict the
+# replacement to the Geocoding API and the intended server environment.
 
 gmaps = googlemaps.Client(key=API_KEY)
 
@@ -55,4 +53,3 @@ providers.to_csv(
 )
 
 print("Geocoding complete")
-
