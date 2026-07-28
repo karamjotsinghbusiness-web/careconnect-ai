@@ -4,7 +4,6 @@ import logging
 from pathlib import Path
 import math
 import json
-import random
 from datetime import date, datetime
 
 import pandas as pd
@@ -18,7 +17,8 @@ from flask_cors import CORS
 
 from models.recommendation_engine import recommend, get_condition_suggestions
 from models.ai_explainer import explain_recommendation
-from models.provider_discovery import discover_supplemental_resources, merge_supplemental
+from models.location_resolver import nearest_missouri_place
+from models.provider_discovery import discover_supplemental_resources
 from models.sql_store import public_data_database_status
 from scripts.import_public_data_postgres import (
     initialize_public_data_database,
@@ -100,6 +100,8 @@ app.config["MAX_CONTENT_LENGTH"] = 16 * 1024
 DEFAULT_ALLOWED_ORIGINS = [
     "https://careconnectai-19ace.firebaseapp.com",
     "https://careconnectai-19ace.web.app",
+    "https://careconnect-doctors-19ace.firebaseapp.com",
+    "https://careconnect-doctors-19ace.web.app",
     "http://localhost:5500",
     "http://127.0.0.1:5500",
     "http://localhost:5000",
@@ -229,6 +231,31 @@ def safe_int(value, default=0):
         return default
 
 
+def safe_coordinate_pair(latitude, longitude):
+    """Validate a complete latitude/longitude pair without logging its values."""
+    if latitude is None and longitude is None:
+        return None
+    try:
+        latitude = float(latitude)
+        longitude = float(longitude)
+    except (TypeError, ValueError):
+        return None
+    if not math.isfinite(latitude) or not math.isfinite(longitude):
+        return None
+    if not -90 <= latitude <= 90 or not -180 <= longitude <= 180:
+        return None
+    return latitude, longitude
+
+
+def approximate_place_name(location):
+    """Create a reader-friendly, non-coordinate label from a Census place."""
+    name = str(getattr(location, "name", "") or "").strip()
+    for suffix in (" city", " town", " village", " CDP"):
+        if name.casefold().endswith(suffix.casefold()):
+            return name[: -len(suffix)].strip()
+    return name
+
+
 def detect_emergency(condition):
     condition = str(condition).lower()
 
@@ -288,8 +315,6 @@ def confidence_score(
 
     if len(recommended_long_term) > 0:
         score += 7
-
-    score += random.randint(0, 3)
 
     return min(score, 98)
 
@@ -914,17 +939,56 @@ def get_recommendation():
                 )
             }, status=403)
 
+        real_phi_active = real_phi_enabled()
+        location_consent = data.get("location_consent") is True
+        patient_latitude = None
+        patient_longitude = None
+        location_label = None
+
+        if location_consent and real_phi_active:
+            coordinates = safe_coordinate_pair(
+                data.get("latitude"),
+                data.get("longitude"),
+            )
+            if coordinates is None:
+                return json_response({
+                    "success": False,
+                    "message": (
+                        "The approved live location was missing or invalid. "
+                        "Try it again or enter a Missouri city or county."
+                    ),
+                }, status=400)
+
+            patient_latitude, patient_longitude = coordinates
+            nearest_place = nearest_missouri_place(
+                patient_latitude,
+                patient_longitude,
+            )
+            if nearest_place is None:
+                return json_response({
+                    "success": False,
+                    "message": (
+                        "CareConnect currently supports live-location searches "
+                        "in Missouri and nearby border communities. Enter a "
+                        "Missouri city or county instead."
+                    ),
+                }, status=422)
+            location_label = approximate_place_name(nearest_place)
+
         patient = {
             "age": safe_int(data.get("age", 0), default=0),
             "gender": str(data.get("gender", ""))[:50],
-            "city": str(data.get("city", ""))[:100],
+            "city": (
+                location_label
+                or str(data.get("city", ""))[:100]
+            ),
             "insurance": str(data.get("insurance", ""))[:100],
             "insurance_plan_type": str(data.get("insurance_plan_type", ""))[:60],
             "condition": str(data.get("condition", ""))[:300],
             "priority": str(data.get("priority", "fastest"))[:30],
             "barriers": data.get("barriers", []) if isinstance(data.get("barriers", []), list) else [],
-            "latitude": data.get("latitude") if real_phi_enabled() else None,
-            "longitude": data.get("longitude") if real_phi_enabled() else None
+            "latitude": patient_latitude,
+            "longitude": patient_longitude,
         }
         insurance = assess_insurance({
             "insurance": patient["insurance"],
@@ -1002,27 +1066,18 @@ def get_recommendation():
             if (demo_only or openai_phi_enabled())
             else (pd.DataFrame(), pd.DataFrame(), pd.DataFrame())
         )
-        providers = merge_supplemental(
-            providers,
-            supplemental_providers,
-            ("provider_name", "facility_name"),
-            dataset_limit=5,
-            supplemental_limit=supplemental_limit,
-        )
-        nearest_clinics = merge_supplemental(
-            nearest_clinics,
-            supplemental_clinics,
-            ("clinic_name", "provider_name", "facility_name"),
-            dataset_limit=5,
-            supplemental_limit=supplemental_limit,
-        )
-        advocates = merge_supplemental(
-            advocates,
-            supplemental_advocates,
-            ("advocate_name", "provider_name"),
-            dataset_limit=5,
-            supplemental_limit=supplemental_limit,
-        )
+        # Web-search results are deliberately kept out of ranked care options.
+        # They have not been geocoded or validated against a primary public
+        # dataset, so mixing them into the main provider lists can send a
+        # patient to the wrong place. They are returned in a separate,
+        # explicitly unverified section for optional human follow-up.
+        supplemental_resources = {
+            "providers": supplemental_providers,
+            "clinics": supplemental_clinics,
+            "advocates": supplemental_advocates,
+            "verification_status": "unverified",
+            "included_in_ranked_results": False,
+        }
 
         providers = add_network_verification_status(providers, insurance)
         nearest_clinics = add_network_verification_status(nearest_clinics, insurance)
@@ -1172,6 +1227,16 @@ def get_recommendation():
             "business_intelligence": business_intelligence,
             "navigation_plan": navigation_plan,
             "insurance_assessment": insurance,
+            "location_context": {
+                "used": location_label is not None,
+                "label": (
+                    f"Near {location_label}, Missouri"
+                    if location_label
+                    else patient["city"]
+                ),
+                "saved": False,
+            },
+            "supplemental_resources": supplemental_resources,
             "providers": providers,
             "advocates": advocates,
             "nearest_clinics": nearest_clinics,
@@ -1232,6 +1297,13 @@ def get_recommendation():
                 "summary": "Insurance assessment is unavailable because the recommendation request failed.",
                 "missing_for_verification": [],
                 "next_steps": []
+            },
+            "supplemental_resources": {
+                "providers": [],
+                "clinics": [],
+                "advocates": [],
+                "verification_status": "unavailable",
+                "included_in_ranked_results": False,
             },
             "providers": [],
             "advocates": [],

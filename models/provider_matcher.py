@@ -4,6 +4,10 @@ from pathlib import Path
 from math import radians, sin, cos, sqrt, atan2
 from difflib import get_close_matches
 from functools import lru_cache
+from models.location_resolver import (
+    is_explicit_county,
+    resolve_missouri_location,
+)
 from models.provider_store import load_provider_data
 
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -183,13 +187,26 @@ def _provider_city_coordinates():
     return coordinates
 
 
-@lru_cache(maxsize=1024)
-def get_city_coordinates(patient_city):
+@lru_cache(maxsize=2048)
+def get_city_coordinates(patient_city, allow_bare_county=True):
     city_input = clean_city(patient_city)
+    census_location = resolve_missouri_location(
+        patient_city,
+        allow_bare_county=allow_bare_county,
+    )
+    if census_location is not None:
+        return census_location.coordinates
+
     coordinates = _provider_city_coordinates()
 
     if city_input in coordinates:
         return coordinates[city_input]
+
+    if city_input in FALLBACK_CITY_COORDINATES:
+        return FALLBACK_CITY_COORDINATES[city_input]
+
+    if is_explicit_county(patient_city):
+        return None, None
 
     close_city = get_close_matches(
         city_input,
@@ -199,9 +216,6 @@ def get_city_coordinates(patient_city):
     )
     if close_city:
         return coordinates[close_city[0]]
-
-    if city_input in FALLBACK_CITY_COORDINATES:
-        return FALLBACK_CITY_COORDINATES[city_input]
 
     close_fallback = get_close_matches(
         city_input,
@@ -228,7 +242,10 @@ def add_distance(
         patient_latitude = float(patient_latitude)
         patient_longitude = float(patient_longitude)
     else:
-        patient_latitude, patient_longitude = get_city_coordinates(patient_city)
+        patient_latitude, patient_longitude = get_city_coordinates(
+            patient_city,
+            allow_bare_county=True,
+        )
 
     if not has_valid_location(patient_latitude, patient_longitude):
         df["distance_miles"] = "Unknown"
@@ -246,7 +263,10 @@ def add_distance(
 
         if not has_valid_location(row_lat, row_lon):
             row_city = row.get("city", "")
-            row_lat, row_lon = get_city_coordinates(row_city)
+            row_lat, row_lon = get_city_coordinates(
+                row_city,
+                allow_bare_county=False,
+            )
 
         if not has_valid_location(row_lat, row_lon):
             return "Unknown"
@@ -287,7 +307,7 @@ def filter_by_radius(df, radius_miles=30):
     ].copy()
 
     if known_distance.empty:
-        return df
+        return df.iloc[0:0].copy()
 
     known_distance["distance_miles"] = (
         known_distance["distance_miles"]
@@ -297,9 +317,6 @@ def filter_by_radius(df, radius_miles=30):
     nearby = known_distance[
         known_distance["distance_miles"] <= radius_miles
     ].copy()
-
-    if nearby.empty:
-        return known_distance.head(5)
 
     return nearby
 

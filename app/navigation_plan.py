@@ -67,6 +67,8 @@ def _option_name(row):
 
 def _care_option(row, option_type):
     distance = _safe_float(row.get("distance_miles"))
+    latitude = _safe_float(row.get("latitude"))
+    longitude = _safe_float(row.get("longitude"))
     return {
         "name": _option_name(row),
         "type": option_type,
@@ -84,8 +86,17 @@ def _care_option(row, option_type):
             40,
         ),
         "distance_miles": round(distance, 1) if distance is not None else None,
+        "destination": {
+            "latitude": latitude,
+            "longitude": longitude,
+        } if latitude is not None and longitude is not None else None,
         "network_status": "Not verified",
         "availability_status": "Call to confirm",
+        "data_source": _clean_text(row.get("source"), 180),
+        "verification_status": _clean_text(
+            row.get("verification_status"),
+            120,
+        ) or "Public listing; verify directly",
         "source_url": _clean_text(row.get("source_url"), 500),
     }
 

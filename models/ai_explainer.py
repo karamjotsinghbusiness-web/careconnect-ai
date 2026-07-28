@@ -94,6 +94,7 @@ Top hospice providers: {hospice_names}
             instructions=instructions,
             input=prompt,
             max_output_tokens=350,
+            store=False,
             timeout=float(os.getenv("OPENAI_EXPLANATION_TIMEOUT_SECONDS", "8"))
         )
 

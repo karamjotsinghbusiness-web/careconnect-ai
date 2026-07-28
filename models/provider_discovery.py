@@ -59,7 +59,7 @@ def _clean_rows(rows, kind, limit):
 def discover_supplemental_resources(city, specialty, condition, limit=3):
     """Find public listings to supplement, never replace, the local dataset."""
     api_key = os.getenv("OPENAI_API_KEY")
-    if not api_key or os.getenv("ENABLE_OPENAI_PROVIDER_SEARCH", "true").lower() != "true":
+    if not api_key or os.getenv("ENABLE_OPENAI_PROVIDER_SEARCH", "false").lower() != "true":
         return pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
 
     prompt = f"""
@@ -87,6 +87,7 @@ This is navigation information, not diagnosis. Return ONLY valid JSON with this 
             tools=[{"type": "web_search"}],
             input=prompt,
             max_output_tokens=1400,
+            store=False,
             timeout=float(os.getenv("OPENAI_SEARCH_TIMEOUT_SECONDS", "25")),
         )
         result = _parse_json(response.output_text)

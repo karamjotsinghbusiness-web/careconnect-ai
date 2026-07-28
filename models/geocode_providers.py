@@ -1,10 +1,25 @@
 # models/geocode_providers.py
 
-import pandas as pd
-import googlemaps
+import os
+import sys
 import time
 
-API_KEY = "AIzaSyDms8HF9oyB6tRUAp7ZukLLkYhHWCjWYDY"
+import pandas as pd
+import googlemaps
+
+# SECURITY: never hardcode API keys in source. Set this in your environment
+# (e.g. a .env file loaded by python-dotenv, or your host's secret manager),
+# and make sure that .env is in .gitignore so it never reaches version control.
+API_KEY = os.environ.get("GOOGLE_MAPS_API_KEY")
+
+if not API_KEY:
+    sys.exit(
+        "GOOGLE_MAPS_API_KEY is not set. Set it as an environment variable "
+        "before running this script (do not hardcode it in the file)."
+    )
+
+# Rotate any key that was previously committed or shared, then restrict the
+# replacement to the Geocoding API and the intended server environment.
 
 gmaps = googlemaps.Client(key=API_KEY)
 
@@ -14,7 +29,6 @@ providers["latitude"] = None
 providers["longitude"] = None
 
 for i, row in providers.iterrows():
-
     try:
         address = f"{row['address']}, {row['city']}, MO"
 
@@ -29,7 +43,9 @@ for i, row in providers.iterrows():
         time.sleep(0.05)
 
     except Exception as e:
-        print(f"✗ {row.get('provider_name','Unknown')} : {e}")
+        # Don't print full exception details if they might ever contain the
+        # key or request URL; keep it to the provider name + error type.
+        print(f"✗ {row.get('provider_name', 'Unknown')} : {type(e).__name__}")
 
 providers.to_csv(
     "data/providers_geocoded.csv",
