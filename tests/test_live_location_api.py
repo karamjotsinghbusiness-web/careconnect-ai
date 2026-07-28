@@ -40,7 +40,10 @@ class LiveLocationApiTests(unittest.TestCase):
             ),
             patch(
                 "app.security.auth.verify_id_token",
-                return_value={"uid": "location-test-user"},
+                return_value={
+                    "uid": "location-test-user",
+                    "email_verified": True,
+                },
             ),
             patch(
                 "app.app.recommend",

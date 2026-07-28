@@ -90,6 +90,18 @@ class CoordinationApiTests(unittest.TestCase):
         response = self.client.get("/coordination/requests")
         self.assertEqual(response.status_code, 401)
 
+    def test_api_requires_verified_email(self):
+        with patch(
+            "app.security.auth.verify_id_token",
+            return_value={"uid": "unverified-patient", "email_verified": False},
+        ):
+            response = self.client.get(
+                "/coordination/requests",
+                headers={"Authorization": "Bearer unverified-patient-token"},
+            )
+        self.assertEqual(response.status_code, 403)
+        self.assertIn("verify your email", response.get_json()["message"].lower())
+
     def test_verified_clinician_claim_is_required_for_status_changes(self):
         with patch(
             "app.security.auth.verify_id_token",
@@ -106,7 +118,7 @@ class CoordinationApiTests(unittest.TestCase):
 
         with patch(
             "app.security.auth.verify_id_token",
-            return_value={"uid": "unverified-user"},
+            return_value={"uid": "unverified-user", "email_verified": True},
         ):
             denied = self.client.post(
                 f"/coordination/requests/{request_id}/status",
@@ -117,7 +129,11 @@ class CoordinationApiTests(unittest.TestCase):
 
         with patch(
             "app.security.auth.verify_id_token",
-            return_value={"uid": "nurse-api", "clinical_role": "nurse"},
+            return_value={
+                "uid": "nurse-api",
+                "email_verified": True,
+                "clinical_role": "nurse",
+            },
         ):
             reviewed = self.client.post(
                 f"/coordination/requests/{request_id}/status",

@@ -135,6 +135,17 @@ def require_firebase_user(json_response):
                     )
                 return json_response({"success": False, "message": "Invalid or expired session."}, 401)
 
+            if g.firebase_user.get("email_verified") is not True:
+                record_security_event(
+                    "email_verification_required", "medium", request.path,
+                    actor=g.firebase_user.get("uid"), source=request.remote_addr,
+                    details={"reason": "verified_email_required"},
+                )
+                return json_response({
+                    "success": False,
+                    "message": "Verify your email before using protected CareConnect features.",
+                }, 403)
+
             return view(*args, **kwargs)
         return wrapped
     return decorator
@@ -172,6 +183,17 @@ def require_clinician(json_response):
                     source=request.remote_addr, details={"reason": "invalid_or_revoked_token"},
                 )
                 return json_response({"success": False, "message": "Invalid or expired clinician session."}, 401)
+
+            if g.firebase_user.get("email_verified") is not True:
+                record_security_event(
+                    "clinical_email_verification_required", "high", request.path,
+                    actor=g.firebase_user.get("uid"), source=request.remote_addr,
+                    details={"reason": "verified_email_required"},
+                )
+                return json_response({
+                    "success": False,
+                    "message": "Verify your email before using the clinician workspace.",
+                }, 403)
 
             role = str(
                 g.firebase_user.get("clinical_role")
@@ -222,6 +244,16 @@ def require_admin(json_response):
                     source=request.remote_addr, details={"reason": "invalid_or_revoked_token"}
                 )
                 return json_response({"success": False, "message": "Invalid or expired session."}, 401)
+            if g.firebase_user.get("email_verified") is not True:
+                record_security_event(
+                    "admin_email_verification_required", "high", request.path,
+                    actor=g.firebase_user.get("uid"), source=request.remote_addr,
+                    details={"reason": "verified_email_required"},
+                )
+                return json_response({
+                    "success": False,
+                    "message": "Verify your email before using administrator features.",
+                }, 403)
             if g.firebase_user.get("admin") is not True:
                 record_security_event(
                     "admin_access_denied", "high", request.path,
