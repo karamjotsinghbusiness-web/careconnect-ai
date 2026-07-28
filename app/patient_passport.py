@@ -939,6 +939,7 @@ def redeem_access_code(
                 clinician_uid,
                 {
                     **grant_details,
+                    "actor_display": grant_details["clinician_display"],
                     "actor_role": clinician_role,
                     "action": f"Access granted for {row['grant_duration_hours']} hours",
                 },
