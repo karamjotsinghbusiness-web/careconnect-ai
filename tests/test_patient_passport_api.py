@@ -179,6 +179,12 @@ class PatientPassportApiTests(unittest.TestCase):
             event_types = {item["event_type"] for item in patient_passport["audit"]}
             self.assertIn("passport_viewed", event_types)
             self.assertIn("entry_added", event_types)
+            granted_event = next(
+                item
+                for item in patient_passport["audit"]
+                if item["event_type"] == "access_granted"
+            )
+            self.assertEqual(granted_event["actor_display"], "Nurse Avery")
 
             revoked = self.client.post(
                 f"/passport/grants/{grant_id}/revoke",
