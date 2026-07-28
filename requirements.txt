@@ -8,5 +8,7 @@ joblib
 openpyxl
 openai
 firebase-admin
+cryptography>=44.0,<46.0
+segno>=1.6,<2.0
 SQLAlchemy>=2.0,<3.0
 psycopg[binary]>=3.2,<4.0

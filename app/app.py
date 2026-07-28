@@ -40,6 +40,20 @@ try:
         revoke_patient_request,
         update_request_status,
     )
+    from app.patient_passport import (
+        PassportError,
+        add_clinician_entry,
+        cancel_access_code,
+        create_access_code,
+        end_clinician_grant,
+        get_clinician_passport,
+        get_patient_passport,
+        initialize_patient_passport_store,
+        passport_available,
+        redeem_access_code,
+        revoke_patient_grant,
+        save_patient_profile,
+    )
 except ImportError:
     from insurance import assess_insurance, add_network_verification_status
     from clinical_intake import structure_clinical_intake
@@ -52,6 +66,20 @@ except ImportError:
         list_work_queue,
         revoke_patient_request,
         update_request_status,
+    )
+    from patient_passport import (
+        PassportError,
+        add_clinician_entry,
+        cancel_access_code,
+        create_access_code,
+        end_clinician_grant,
+        get_clinician_passport,
+        get_patient_passport,
+        initialize_patient_passport_store,
+        passport_available,
+        redeem_access_code,
+        revoke_patient_grant,
+        save_patient_profile,
     )
 try:
     # Railway/Gunicorn loads this file as the app.app package module.
@@ -144,6 +172,10 @@ try:
     initialize_care_coordination_store()
 except Exception as exc:
     logger.warning("Care coordination storage unavailable during startup: %s", type(exc).__name__)
+try:
+    initialize_patient_passport_store()
+except Exception as exc:
+    logger.warning("Care Passport storage unavailable during startup: %s", type(exc).__name__)
 initialize_firebase_admin()
 public_data_database_startup = initialize_public_data_database()
 
@@ -674,6 +706,7 @@ def home():
         "message": "CareConnect AI backend is running",
         "real_phi_enabled": real_phi_enabled(),
         "openai_phi_enabled": openai_phi_enabled(),
+        "patient_passport_enabled": real_phi_enabled() and passport_available(),
         "public_data_storage": public_data_database_startup.get(
             "storage_mode",
             "validated_files",
@@ -687,6 +720,271 @@ def data_status():
         "success": True,
         "public_data": public_data_database_status(),
     })
+
+
+def _passport_feature_error():
+    if not real_phi_enabled():
+        return json_response({
+            "success": False,
+            "message": "Protected Care Passport storage is not enabled.",
+        }, status=403)
+    if not passport_available():
+        return json_response({
+            "success": False,
+            "message": "Care Passport protected storage is unavailable.",
+        }, status=503)
+    return None
+
+
+def _clinician_passport_actor():
+    claims = g.firebase_user
+    role = str(claims.get("clinical_role") or "").strip().lower()
+    if role not in {"doctor", "nurse", "provider"}:
+        raise PassportError(
+            "A verified clinical workforce role is required for Care Passport access.",
+            status=403,
+        )
+    organization_id = str(claims.get("organization_id") or "").strip()
+    organization_name = str(claims.get("organization_name") or "").strip()
+    if not organization_id or not organization_name:
+        raise PassportError(
+            "A verified healthcare organization affiliation is required for Care Passport access.",
+            status=403,
+        )
+    display = str(
+        claims.get("name")
+        or claims.get("display_name")
+        or claims.get("email")
+        or "Verified clinician"
+    ).strip()
+    return {
+        "clinician_uid": claims.get("uid"),
+        "clinician_role": role,
+        "clinician_display": display[:120],
+        "organization_id": organization_id[:120],
+        "organization_name": organization_name[:160],
+    }
+
+
+def _passport_exception_response(exc):
+    return json_response(
+        {"success": False, "message": str(exc)},
+        status=getattr(exc, "status", 400),
+    )
+
+
+@app.route("/passport", methods=["GET", "OPTIONS"])
+@require_firebase_user(json_response)
+def patient_passport():
+    if request.method == "OPTIONS":
+        return json_response({"status": "ok"})
+    blocked = _passport_feature_error()
+    if blocked:
+        return blocked
+    try:
+        return json_response({
+            "success": True,
+            "passport": get_patient_passport(g.firebase_user.get("uid")),
+        })
+    except PassportError as exc:
+        return _passport_exception_response(exc)
+
+
+@app.route("/passport/profile", methods=["POST", "OPTIONS"])
+@require_firebase_user(json_response)
+def patient_passport_profile():
+    if request.method == "OPTIONS":
+        return json_response({"status": "ok"})
+    blocked = _passport_feature_error()
+    if blocked:
+        return blocked
+    try:
+        passport = save_patient_profile(
+            g.firebase_user.get("uid"),
+            request.get_json(silent=True) or {},
+        )
+        record_security_event(
+            "passport_profile_updated",
+            "info",
+            request.path,
+            actor=g.firebase_user.get("uid"),
+            source=request.remote_addr,
+            details={"status_code": "updated"},
+        )
+        return json_response({"success": True, "passport": passport})
+    except PassportError as exc:
+        return _passport_exception_response(exc)
+
+
+@app.route("/passport/access-codes", methods=["POST", "OPTIONS"])
+@require_firebase_user(json_response)
+def patient_passport_access_code():
+    if request.method == "OPTIONS":
+        return json_response({"status": "ok"})
+    blocked = _passport_feature_error()
+    if blocked:
+        return blocked
+    data = request.get_json(silent=True) or {}
+    try:
+        access_code = create_access_code(
+            g.firebase_user.get("uid"),
+            data.get("grant_duration_hours", 4),
+        )
+        record_security_event(
+            "passport_access_code_created",
+            "info",
+            request.path,
+            actor=g.firebase_user.get("uid"),
+            source=request.remote_addr,
+            details={"status_code": "created"},
+        )
+        return json_response({"success": True, "access_code": access_code}, status=201)
+    except PassportError as exc:
+        return _passport_exception_response(exc)
+
+
+@app.route("/passport/access-codes/<code_id>/cancel", methods=["POST", "OPTIONS"])
+@require_firebase_user(json_response)
+def patient_passport_cancel_code(code_id):
+    if request.method == "OPTIONS":
+        return json_response({"status": "ok"})
+    blocked = _passport_feature_error()
+    if blocked:
+        return blocked
+    try:
+        result = cancel_access_code(g.firebase_user.get("uid"), code_id)
+        return json_response({"success": True, "access_code": result})
+    except PassportError as exc:
+        return _passport_exception_response(exc)
+
+
+@app.route("/passport/grants/<grant_id>/revoke", methods=["POST", "OPTIONS"])
+@require_firebase_user(json_response)
+def patient_passport_revoke_grant(grant_id):
+    if request.method == "OPTIONS":
+        return json_response({"status": "ok"})
+    blocked = _passport_feature_error()
+    if blocked:
+        return blocked
+    try:
+        result = revoke_patient_grant(g.firebase_user.get("uid"), grant_id)
+        record_security_event(
+            "passport_grant_revoked",
+            "info",
+            request.path,
+            actor=g.firebase_user.get("uid"),
+            source=request.remote_addr,
+            details={"status_code": "revoked"},
+        )
+        return json_response({"success": True, "grant": result})
+    except PassportError as exc:
+        return _passport_exception_response(exc)
+
+
+@app.route("/passport/clinician/redeem", methods=["POST", "OPTIONS"])
+@require_clinician(json_response)
+def clinician_passport_redeem():
+    if request.method == "OPTIONS":
+        return json_response({"status": "ok"})
+    blocked = _passport_feature_error()
+    if blocked:
+        return blocked
+    try:
+        actor = _clinician_passport_actor()
+        result = redeem_access_code(
+            actor["clinician_uid"],
+            actor["clinician_role"],
+            actor["clinician_display"],
+            actor["organization_id"],
+            actor["organization_name"],
+            (request.get_json(silent=True) or {}).get("code"),
+        )
+        record_security_event(
+            "passport_code_redeemed",
+            "info",
+            request.path,
+            actor=actor["clinician_uid"],
+            source=request.remote_addr,
+            details={"status_code": "access_granted"},
+        )
+        return json_response({"success": True, "grant": result}, status=201)
+    except PassportError as exc:
+        severity = "high" if getattr(exc, "status", 400) in {403, 429} else "medium"
+        record_security_event(
+            "passport_code_redemption_denied",
+            severity,
+            request.path,
+            actor=g.firebase_user.get("uid"),
+            source=request.remote_addr,
+            details={"status_code": getattr(exc, "status", 400)},
+        )
+        return _passport_exception_response(exc)
+
+
+@app.route("/passport/clinician/<grant_id>", methods=["GET", "OPTIONS"])
+@require_clinician(json_response)
+def clinician_passport_view(grant_id):
+    if request.method == "OPTIONS":
+        return json_response({"status": "ok"})
+    blocked = _passport_feature_error()
+    if blocked:
+        return blocked
+    try:
+        actor = _clinician_passport_actor()
+        passport = get_clinician_passport(
+            grant_id,
+            actor["clinician_uid"],
+            actor,
+            record_view=True,
+        )
+        return json_response({"success": True, "passport": passport})
+    except PassportError as exc:
+        return _passport_exception_response(exc)
+
+
+@app.route("/passport/clinician/<grant_id>/entries", methods=["POST", "OPTIONS"])
+@require_clinician(json_response)
+def clinician_passport_entry(grant_id):
+    if request.method == "OPTIONS":
+        return json_response({"status": "ok"})
+    blocked = _passport_feature_error()
+    if blocked:
+        return blocked
+    try:
+        actor = _clinician_passport_actor()
+        entry = add_clinician_entry(
+            grant_id,
+            actor["clinician_uid"],
+            actor,
+            request.get_json(silent=True) or {},
+        )
+        record_security_event(
+            "passport_entry_added",
+            "info",
+            request.path,
+            actor=actor["clinician_uid"],
+            source=request.remote_addr,
+            details={"status_code": "append_only_entry_created"},
+        )
+        return json_response({"success": True, "entry": entry}, status=201)
+    except PassportError as exc:
+        return _passport_exception_response(exc)
+
+
+@app.route("/passport/clinician/<grant_id>/end", methods=["POST", "OPTIONS"])
+@require_clinician(json_response)
+def clinician_passport_end_access(grant_id):
+    if request.method == "OPTIONS":
+        return json_response({"status": "ok"})
+    blocked = _passport_feature_error()
+    if blocked:
+        return blocked
+    try:
+        actor = _clinician_passport_actor()
+        grant = end_clinician_grant(grant_id, actor["clinician_uid"], actor)
+        return json_response({"success": True, "grant": grant})
+    except PassportError as exc:
+        return _passport_exception_response(exc)
 
 
 @app.route("/security/status", methods=["GET", "OPTIONS"])
